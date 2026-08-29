@@ -2,13 +2,28 @@
 
 from typing import Protocol
 
+from ..usage import (
+    ResearchUsageRecord,
+    UsageSink,
+    emit_usage,
+    make_phase_usage_record,
+)
 from .schema import CandidateProblem, EvidenceBundle, EvidenceItem, EvidenceStatus
 
 
 class EvidenceCollector(Protocol):
     """Replaceable evidence source; implementations must remain offline-safe."""
 
-    def collect(self, candidate: CandidateProblem) -> EvidenceBundle:
+    def collect(
+        self,
+        candidate: CandidateProblem,
+        *,
+        usage_sink: UsageSink | None = None,
+        usage_record: ResearchUsageRecord | None = None,
+        research_run_id: str | None = None,
+        artifact_path: str | None = None,
+        model: str = "",
+    ) -> EvidenceBundle:
         ...
 
 
@@ -18,8 +33,27 @@ class FixtureEvidenceCollector:
     def __init__(self, bundle: EvidenceBundle) -> None:
         self._bundle = bundle
 
-    def collect(self, candidate: CandidateProblem) -> EvidenceBundle:
+    def collect(
+        self,
+        candidate: CandidateProblem,
+        *,
+        usage_sink: UsageSink | None = None,
+        usage_record: ResearchUsageRecord | None = None,
+        research_run_id: str | None = None,
+        artifact_path: str | None = None,
+        model: str = "",
+    ) -> EvidenceBundle:
         del candidate
+        if usage_sink is not None:
+            record = usage_record or make_phase_usage_record(
+                phase="literature",
+                research_run_id=research_run_id or "",
+                artifact_path=artifact_path,
+                model=model,
+            )
+            if record.phase.value != "literature":
+                raise ValueError("EvidenceCollector usage record must use literature phase")
+            emit_usage(usage_sink, record)
         return self._bundle
 
 

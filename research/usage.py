@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 import json
 from pathlib import PurePath
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 
 class ResearchPhase(StrEnum):
@@ -37,6 +37,13 @@ _RESOURCE_FIELDS = (
     "wall_time_ms",
     "reviewer_calls",
 )
+
+
+class UsageSink(Protocol):
+    """Consumer for usage records; sinks may persist or aggregate them."""
+
+    def record(self, record: "ResearchUsageRecord") -> None:
+        ...
 
 
 @dataclass(frozen=True)
@@ -116,6 +123,39 @@ class ResearchUsageRecord:
     @classmethod
     def from_json(cls, value: str) -> "ResearchUsageRecord":
         return cls.from_dict(json.loads(value))
+
+
+def make_phase_usage_record(
+    *,
+    phase: ResearchPhase | str,
+    research_run_id: str,
+    artifact_path: str | None = None,
+    model: str = "",
+    record_id: str | None = None,
+    measurement_status: MeasurementStatus | str = MeasurementStatus.PENDING,
+    **measurements: int | None,
+) -> ResearchUsageRecord:
+    """Create an explicit phase record, defaulting unknown measurements to pending."""
+    normalized_phase = ResearchPhase(phase)
+    path = artifact_path or f"artifacts/{research_run_id}/{normalized_phase.value}.json"
+    return ResearchUsageRecord(
+        record_id=record_id or f"usage-{research_run_id}-{normalized_phase.value}",
+        research_run_id=research_run_id,
+        phase=normalized_phase,
+        model=model,
+        artifact_path=path,
+        measurement_status=measurement_status,
+        **{name: measurements.get(name) for name in _RESOURCE_FIELDS},
+    )
+
+
+def emit_usage(
+    sink: UsageSink | None,
+    record: ResearchUsageRecord | None,
+) -> None:
+    """Send a record only when a caller explicitly supplied a sink."""
+    if sink is not None and record is not None:
+        sink.record(record)
 
 
 def _totals(records: Iterable[ResearchUsageRecord]) -> dict[str, int]:

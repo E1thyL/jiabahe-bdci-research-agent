@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .evidence import EvidenceIndex
+from ..usage import ResearchUsageRecord, UsageSink, emit_usage, make_phase_usage_record
 from .policies import topic_policy
 from .schema import (
     CandidateProblem,
@@ -27,6 +28,12 @@ class ResearchValueGate:
         self,
         candidate: CandidateProblem,
         evidence: EvidenceBundle | tuple[EvidenceItem, ...] = (),
+        *,
+        usage_sink: UsageSink | None = None,
+        usage_record: ResearchUsageRecord | None = None,
+        research_run_id: str | None = None,
+        artifact_path: str | None = None,
+        model: str = "",
     ) -> ValueGateDecision:
         topic_policy(candidate.topic)
         index = EvidenceIndex(evidence)
@@ -127,7 +134,7 @@ class ResearchValueGate:
         # Only explicit experiment records can move this later-stage status.
         experiment_ids = index.verified_experiment_ids()
         experiment_status = EvidenceStatus.VERIFIED if experiment_ids else EvidenceStatus.PENDING
-        return ValueGateDecision(
+        result = ValueGateDecision(
             problem_statement=candidate.problem_statement,
             significance=significance,
             novelty=novelty,
@@ -138,3 +145,14 @@ class ResearchValueGate:
             experiment={"status": experiment_status, "evidence_ids": experiment_ids},
             decision=decision,
         )
+        if usage_sink is not None:
+            record = usage_record or make_phase_usage_record(
+                phase="value_gate",
+                research_run_id=research_run_id or "",
+                artifact_path=artifact_path,
+                model=model,
+            )
+            if record.phase.value != "value_gate":
+                raise ValueError("ResearchValueGate usage record must use value_gate phase")
+            emit_usage(usage_sink, record)
+        return result
