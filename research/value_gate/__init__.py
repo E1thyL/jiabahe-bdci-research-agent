@@ -2,6 +2,7 @@
 
 from .gate import ResearchValueGate
 from .evidence import EvidenceCollector, FixtureEvidenceCollector
+from .evidence import AdapterEvidenceCollector
 from .schema import (
     CandidateProblem,
     CriterionAssessment,
@@ -20,6 +21,7 @@ __all__ = [
     "EvidenceStatus",
     "EvidenceCollector",
     "FixtureEvidenceCollector",
+    "AdapterEvidenceCollector",
     "GateDecision",
     "ResearchValueGate",
     "ValueGateDecision",

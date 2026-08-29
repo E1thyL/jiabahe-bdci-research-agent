@@ -1,6 +1,6 @@
 """Offline evidence collection protocol and evidence indexing."""
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from ..usage import (
     ResearchUsageRecord,
@@ -9,6 +9,7 @@ from ..usage import (
     make_phase_usage_record,
 )
 from .schema import CandidateProblem, EvidenceBundle, EvidenceItem, EvidenceStatus
+from ..literature.protocol import LiteratureSourceAdapter
 
 
 class EvidenceCollector(Protocol):
@@ -18,6 +19,7 @@ class EvidenceCollector(Protocol):
         self,
         candidate: CandidateProblem,
         *,
+        topic_config: dict[str, Any] | None = None,
         usage_sink: UsageSink | None = None,
         usage_record: ResearchUsageRecord | None = None,
         research_run_id: str | None = None,
@@ -37,13 +39,14 @@ class FixtureEvidenceCollector:
         self,
         candidate: CandidateProblem,
         *,
+        topic_config: dict[str, Any] | None = None,
         usage_sink: UsageSink | None = None,
         usage_record: ResearchUsageRecord | None = None,
         research_run_id: str | None = None,
         artifact_path: str | None = None,
         model: str = "",
     ) -> EvidenceBundle:
-        del candidate
+        del candidate, topic_config
         if usage_sink is not None:
             record = usage_record or make_phase_usage_record(
                 phase="literature",
@@ -55,6 +58,38 @@ class FixtureEvidenceCollector:
                 raise ValueError("EvidenceCollector usage record must use literature phase")
             emit_usage(usage_sink, record)
         return self._bundle
+
+
+class AdapterEvidenceCollector:
+    """Collect evidence from one injected literature adapter."""
+
+    def __init__(self, adapter: LiteratureSourceAdapter) -> None:
+        self._adapter = adapter
+
+    def collect(
+        self,
+        candidate: CandidateProblem,
+        *,
+        topic_config: dict[str, Any] | None = None,
+        usage_sink: UsageSink | None = None,
+        usage_record: ResearchUsageRecord | None = None,
+        research_run_id: str | None = None,
+        artifact_path: str | None = None,
+        model: str = "",
+    ) -> EvidenceBundle:
+        result = self._adapter.search(candidate, topic_config)
+        bundle = result.to_evidence_bundle()
+        if usage_sink is not None:
+            record = usage_record or make_phase_usage_record(
+                phase="literature",
+                research_run_id=research_run_id or "",
+                artifact_path=artifact_path,
+                model=model,
+            )
+            if record.phase.value != "literature":
+                raise ValueError("EvidenceCollector usage record must use literature phase")
+            emit_usage(usage_sink, record)
+        return bundle
 
 
 class EvidenceIndex:
