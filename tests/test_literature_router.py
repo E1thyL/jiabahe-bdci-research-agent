@@ -56,6 +56,11 @@ def test_unknown_online_endpoint_is_rejected():
         LiteratureRouter(ResearchRuntimeConfig("auto"), offline=offline_source(), online=Bad())
 
 
+def test_configured_source_allowlist_is_enforced():
+    with pytest.raises(ValueError, match="allowlisted"):
+        LiteratureRouter(ResearchRuntimeConfig("auto", online_sources=("arxiv",)), offline=offline_source(), online=FakeOnline())
+
+
 def test_auto_falls_back_after_online_failure():
     online = FakeOnline(error=TimeoutError("offline"))
     router = LiteratureRouter(ResearchRuntimeConfig("auto"), offline=offline_source(), online=online)

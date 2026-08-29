@@ -25,7 +25,7 @@ class LiteratureRouter:
         self.offline = offline
         self.online = online
         if online is not None:
-            self._validate_online_adapter(online)
+            self._validate_online_adapter(online, config.online_sources)
 
     def search(
         self,
@@ -57,9 +57,9 @@ class LiteratureRouter:
         return result
 
     @staticmethod
-    def _validate_online_adapter(adapter: LiteratureSourceAdapter) -> None:
+    def _validate_online_adapter(adapter: LiteratureSourceAdapter, allowed_sources: tuple[str, ...]) -> None:
         source = str(getattr(adapter, "_source_name", getattr(adapter, "source_name", ""))).lower()
-        if source not in {"openalex", "arxiv"}:
+        if source not in allowed_sources:
             raise ValueError(f"online adapter is not allowlisted: {source or '<unknown>'}")
         endpoint = getattr(adapter, "API_URL", getattr(adapter, "api_url", ""))
         host = urlparse(str(endpoint)).netloc.lower()
