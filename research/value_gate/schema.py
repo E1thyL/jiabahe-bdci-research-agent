@@ -56,12 +56,15 @@ class EvidenceItem:
     source_hash: str = ""
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "verification_status", EvidenceStatus(self.verification_status)
+        )
         if not self.evidence_id.strip():
             raise ValueError("evidence_id must not be empty")
         if not self.source_uri.strip() or not self.title.strip():
             raise ValueError("source_uri and title must not be empty")
-        if not self.excerpt.strip() or not self.source_hash.strip():
-            raise ValueError("excerpt and source_hash must not be empty")
+        if not self.source_hash.strip():
+            raise ValueError("source_hash must not be empty")
         if self.evidence_type not in {
             "prior_work",
             "limitation",

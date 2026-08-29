@@ -8,6 +8,8 @@ from .protocol import (
 )
 from .replay import ReplayLiteratureSource
 from .openalex import OpenAlexLiteratureSource
+from .quality import LiteratureQualityFilter, LiteratureQualityReport
+from .novelty import NoveltyGapBuilder, NoveltyGapReport
 
 __all__ = [
     "LiteratureRecord",
@@ -16,4 +18,8 @@ __all__ = [
     "LiteratureSourceAdapter",
     "ReplayLiteratureSource",
     "OpenAlexLiteratureSource",
+    "LiteratureQualityFilter",
+    "LiteratureQualityReport",
+    "NoveltyGapBuilder",
+    "NoveltyGapReport",
 ]

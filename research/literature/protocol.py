@@ -46,6 +46,9 @@ class LiteratureSearchResult:
     artifact_path: str | None = None
     raw_response: dict[str, Any] | None = None
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", LiteratureSearchStatus(self.status))
+
     def to_evidence_bundle(self) -> EvidenceBundle:
         """Materialize adapter-owned records into provenance-bearing evidence."""
         items = tuple(
