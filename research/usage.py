@@ -94,7 +94,7 @@ class ResearchUsageRecord:
             value = getattr(self, name)
             if value is not None and value < 0:
                 raise ValueError(f"{name} cannot be negative")
-            if status != MeasurementStatus.PENDING and value is None:
+            if status == MeasurementStatus.OBSERVED and value is None:
                 missing.append(name)
         if missing:
             raise ValueError(

@@ -7,6 +7,7 @@ from .protocol import (
     LiteratureSourceAdapter,
 )
 from .replay import ReplayLiteratureSource
+from .openalex import OpenAlexLiteratureSource
 
 __all__ = [
     "LiteratureRecord",
@@ -14,4 +15,5 @@ __all__ = [
     "LiteratureSearchStatus",
     "LiteratureSourceAdapter",
     "ReplayLiteratureSource",
+    "OpenAlexLiteratureSource",
 ]

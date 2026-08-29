@@ -43,6 +43,8 @@ class LiteratureSearchResult:
     records: tuple[LiteratureRecord, ...] = ()
     status: LiteratureSearchStatus = LiteratureSearchStatus.SUCCESS
     failure_reason: str | None = None
+    artifact_path: str | None = None
+    raw_response: dict[str, Any] | None = None
 
     def to_evidence_bundle(self) -> EvidenceBundle:
         """Materialize adapter-owned records into provenance-bearing evidence."""

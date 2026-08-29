@@ -101,6 +101,20 @@ def test_pending_measurement_allows_empty_resource_fields() -> None:
     assert record.to_dict()["input_tokens"] is None
 
 
+def test_estimated_measurement_can_leave_unknown_tokens_null() -> None:
+    record = _record(
+        input_tokens=None,
+        output_tokens=None,
+        tool_calls=1,
+        wall_time_ms=25,
+        measurement_status="estimated",
+    )
+
+    assert record.measurement_status == MeasurementStatus.ESTIMATED
+    assert record.input_tokens is None
+    assert record.tool_calls == 1
+
+
 def test_artifact_path_must_be_relative_and_run_scoped() -> None:
     with pytest.raises(ValueError, match="relative"):
         _record(artifact_path="C:/tmp/value_gate.json")
