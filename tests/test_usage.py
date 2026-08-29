@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from research.usage import (
+    MeasurementStatus,
+    ResearchUsageRecord,
+    aggregate_usage,
+)
+
+
+def _record(**overrides) -> ResearchUsageRecord:
+    values = dict(
+        record_id="usage-001",
+        research_run_id="research-001",
+        phase="value_gate",
+        model="model-name",
+        input_tokens=1200,
+        output_tokens=800,
+        tool_calls=3,
+        retry_count=0,
+        wall_time_ms=4200,
+        reviewer_calls=0,
+        artifact_path="artifacts/research-001/value_gate.json",
+        measurement_status="observed",
+    )
+    values.update(overrides)
+    return ResearchUsageRecord(**values)
+
+
+def test_normal_record_and_json_round_trip() -> None:
+    record = _record()
+    restored = ResearchUsageRecord.from_json(record.to_json())
+
+    assert restored == record
+    assert json.loads(record.to_json())["phase"] == "value_gate"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["input_tokens", "output_tokens", "tool_calls", "retry_count", "wall_time_ms", "reviewer_calls"],
+)
+def test_negative_resource_values_are_rejected(field: str) -> None:
+    with pytest.raises(ValueError, match="cannot be negative"):
+        _record(**{field: -1})
+
+
+def test_unknown_phase_and_missing_run_id_are_rejected() -> None:
+    with pytest.raises(ValueError, match="unsupported phase"):
+        _record(phase="unknown")
+    with pytest.raises(ValueError, match="research_run_id"):
+        _record(research_run_id="")
+
+
+@pytest.mark.parametrize("status", ["observed", "estimated", "pending"])
+def test_measurement_statuses_are_explicit(status: str) -> None:
+    values = {} if status == "pending" else {
+        "input_tokens": 1,
+        "output_tokens": 2,
+        "tool_calls": 0,
+        "retry_count": 0,
+        "wall_time_ms": 10,
+        "reviewer_calls": 0,
+    }
+    record = _record(measurement_status=status, **values)
+    assert record.measurement_status == MeasurementStatus(status)
+
+
+def test_non_pending_measurements_cannot_silently_omit_tokens() -> None:
+    with pytest.raises(ValueError, match="resource fields"):
+        _record(input_tokens=None)
+
+
+def test_pending_measurement_allows_empty_resource_fields() -> None:
+    record = _record(
+        input_tokens=None,
+        output_tokens=None,
+        tool_calls=None,
+        retry_count=None,
+        wall_time_ms=None,
+        reviewer_calls=None,
+        measurement_status="pending",
+    )
+    assert record.to_dict()["input_tokens"] is None
+
+
+def test_artifact_path_must_be_relative_and_run_scoped() -> None:
+    with pytest.raises(ValueError, match="relative"):
+        _record(artifact_path="C:/tmp/value_gate.json")
+    with pytest.raises(ValueError, match="include research_run_id"):
+        _record(artifact_path="artifacts/other-run/value_gate.json")
+
+
+def test_aggregate_usage_preserves_phase_totals() -> None:
+    records = (
+        _record(),
+        _record(
+            record_id="usage-002",
+            phase="literature",
+            input_tokens=100,
+            output_tokens=50,
+            tool_calls=2,
+            wall_time_ms=300,
+            artifact_path="artifacts/research-001/literature.json",
+        ),
+        _record(
+            record_id="usage-003",
+            phase="drafting",
+            input_tokens=None,
+            output_tokens=None,
+            tool_calls=None,
+            retry_count=None,
+            wall_time_ms=None,
+            reviewer_calls=None,
+            measurement_status="pending",
+            artifact_path="artifacts/research-001/drafting.json",
+        ),
+    )
+    result = aggregate_usage(records)
+
+    assert result["total_input_tokens"] == 1300
+    assert result["total_output_tokens"] == 850
+    assert result["total_tool_calls"] == 5
+    assert result["by_phase"]["value_gate"]["total_wall_time_ms"] == 4200
+    assert result["by_phase"]["literature"]["total_input_tokens"] == 100
+    assert result["by_phase"]["drafting"]["total_input_tokens"] == 0
