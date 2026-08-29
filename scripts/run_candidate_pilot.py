@@ -7,6 +7,7 @@ This script never persists the API key or the raw model response. Use
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -17,11 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from research.literature import OpenAlexLiteratureSource, ReplayLiteratureSource  # noqa: E402
+from research.literature import OpenAlexLiteratureSource, ReplayLiteratureSource, LiteratureQualityFilter, NoveltyGapBuilder  # noqa: E402
 from research.literature.router import LiteratureRouter  # noqa: E402
 from research.model.deepseek import DeepSeekV4FlashClient  # noqa: E402
 from research.runtime_config import ResearchRuntimeConfig  # noqa: E402
 from research.value_gate.schema import CandidateProblem  # noqa: E402
+from research.value_gate.gate import ResearchValueGate  # noqa: E402
 
 
 TOPICS = ("context_engineering", "memory_engine", "self_evolution")
@@ -83,9 +85,24 @@ def run_pilot(*, run_id: str, max_candidates: int, client: Any, router: Literatu
         candidate = parse_candidate(topic, client.generate(candidate_prompt(topic)))
         search = router.search(candidate, {"query": candidate.problem_statement})
         bundle = search.to_evidence_bundle()
+        evidence_ids = tuple(sorted(bundle.ids()))
+        candidate = replace(candidate, significance_evidence_ids=evidence_ids,
+                            closest_prior_work=evidence_ids, novelty_evidence_ids=evidence_ids,
+                            gap=candidate.hypothesis, difference=candidate.expected_contribution[0] if candidate.expected_contribution else "",
+                            feasibility_evidence_ids=evidence_ids)
+        quality = LiteratureQualityFilter().evaluate(candidate, bundle, search)
+        novelty = NoveltyGapBuilder().build(candidate, bundle, quality)
+        decision = ResearchValueGate().evaluate(candidate, bundle)
         results.append({"topic": topic, "candidate": _safe(candidate.__dict__, secret), "search_status": search.status.value,
-                        "evidence_ids": sorted(bundle.ids()), "source": search.source_name,
-                        "artifact_path": search.artifact_path})
+                        "evidence_ids": list(evidence_ids), "source": search.source_name,
+                        "artifact_path": search.artifact_path, "quality": _safe(quality.to_dict(), secret),
+                        "novelty_gap": _safe(novelty.to_dict(), secret),
+                        "mechanical_gate_decision": decision.decision.value,
+                        "scientific_review_decision": "revise" if novelty.status != "supported" else decision.decision.value,
+                        "status": novelty.status, "reason": list(decision.reviewer_objections) + list(novelty.unsupported_claims),
+                        "closest_prior_work_ids": list(novelty.closest_prior_work_ids),
+                        "supported_gap": novelty.supported_gap, "candidate_difference": novelty.candidate_difference,
+                        "baseline_plan": list(candidate.baselines), "metric_plan": list(candidate.metrics)})
     report = {"research_run_id": run_id, "candidate_count": len(results), "method_design": False,
               "drafting": False, "stanford_reviewer": False, "candidates": results}
     if write_artifact:
