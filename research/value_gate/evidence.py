@@ -1,6 +1,8 @@
 """Offline evidence collection protocol and evidence indexing."""
 
-from typing import Any, Protocol
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ..usage import (
     ResearchUsageRecord,
@@ -9,7 +11,9 @@ from ..usage import (
     make_phase_usage_record,
 )
 from .schema import CandidateProblem, EvidenceBundle, EvidenceItem, EvidenceStatus
-from ..literature.protocol import LiteratureSourceAdapter
+
+if TYPE_CHECKING:
+    from ..literature.protocol import LiteratureSourceAdapter
 
 
 class EvidenceCollector(Protocol):
