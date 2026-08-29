@@ -27,7 +27,8 @@ class DeepSeekV4FlashClient:
                  model: str | None = None, timeout: float = 30.0, max_retries: int = 1,
                  request_fn: Callable[[str, dict[str, str], bytes, float], bytes] | None = None,
                  usage_sink: UsageSink | None = None, research_run_id: str | None = None,
-                 artifact_path: str | None = None) -> None:
+                 artifact_path: str | None = None,
+                 sleep_fn: Callable[[float], None] = time.sleep) -> None:
         self.endpoint = endpoint or os.environ.get("DEEPSEEK_API_ENDPOINT", "")
         self.api_key = api_key if api_key is not None else os.environ.get("DEEPSEEK_API_KEY", "")
         self.model = model or os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
@@ -35,6 +36,7 @@ class DeepSeekV4FlashClient:
         if not self.model.strip() or timeout <= 0 or max_retries < 0:
             raise ValueError("model, timeout, and retry settings are invalid")
         self._request = request_fn or _request
+        self._sleep = sleep_fn
         self._usage_sink, self._run_id, self._artifact_path = usage_sink, research_run_id, artifact_path
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
@@ -54,7 +56,7 @@ class DeepSeekV4FlashClient:
                 last_error = exc
                 if attempt == self.max_retries:
                     break
-                time.sleep(0.1 * (2 ** attempt))
+                self._sleep(0.1 * (2 ** attempt))
         raise RuntimeError(f"DeepSeek request failed: {last_error}") from last_error
 
     def _record_usage(self, response: DeepSeekResponse, wall_time_ms: int, retries: int, phase: str) -> None:
