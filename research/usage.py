@@ -14,6 +14,7 @@ from typing import Any, Iterable, Protocol
 
 
 class ResearchPhase(StrEnum):
+    IDEATION = "ideation"
     VALUE_GATE = "value_gate"
     LITERATURE = "literature"
     METHOD_DESIGN = "method_design"
