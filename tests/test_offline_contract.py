@@ -3,6 +3,7 @@ from research.claim_map import ClaimLink, ClaimMap
 from research.pipeline.g3 import check_drafting_readiness
 from research.value_gate import EvidenceBundle, EvidenceItem, EvidenceStatus, ScientificSupportLevel
 from types import SimpleNamespace
+from research import ArtifactStore
 
 def item(level=ScientificSupportLevel.FULL_TEXT):
     return EvidenceItem("e1", "https://example.org/p", "Paper", ("A",), 2024, "V", "excerpt", "prior_work", EvidenceStatus.VERIFIED, "hash", level)
@@ -58,3 +59,15 @@ def test_g3_fails_closed_without_citation_registry():
         analysis=SimpleNamespace(status="pending", artifact_path="artifacts/r/analysis.json"),
         claim_map=ClaimMap(), evidence=EvidenceBundle(), usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),))
     assert "citation_registry_missing" in result.missing
+
+def test_g3_accepts_complete_artifact_store():
+    store = ArtifactStore()
+    store.register(path="artifacts/r/exp.json", research_run_id="r", artifact_type="experiment_execution", content={"ok": 1})
+    store.register(path="artifacts/r/analysis.json", research_run_id="r", artifact_type="result_analysis", content={"ok": 1})
+    claim = ClaimMap((ClaimLink("c1", "limitation", "limit", ("e1",), ("cite-1",), ScientificSupportLevel.FULL_TEXT),))
+    result = check_drafting_readiness(value_gate=SimpleNamespace(decision="go"),
+        execution=SimpleNamespace(verified_record_ids=("x",), status="verified", research_run_id="r", artifact_path="artifacts/r/exp.json"),
+        analysis=SimpleNamespace(status="ready", artifact_path="artifacts/r/analysis.json"), claim_map=claim,
+        evidence=EvidenceBundle((item(),)), experiment_records=(), citation_registry={"research_run_id":"r", "citations":["cite-1"]},
+        usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
+    assert result.status == "ready"
