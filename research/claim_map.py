@@ -27,7 +27,7 @@ class ClaimMap:
         lookup = {item.evidence_id: item for item in getattr(evidence, "items", ())}
         experiment_lookup = {record.record_id: record for record in experiment_records if record.is_verified}
         ids.update(experiment_lookup)
-        errors=[]; seen=set(); citations = citations or set()
+        errors=[]; seen=set()
         for c in self.claims:
             if c.claim_id in seen: errors.append(f"duplicate claim_id: {c.claim_id}")
             seen.add(c.claim_id)
@@ -42,7 +42,7 @@ class ClaimMap:
                     errors.append(f"insufficient support level for claim: {c.claim_id}")
                 if c.claim_type == "technical_difference" and item is not None and item.support_level.value in {"metadata", "abstract"}:
                     errors.append(f"technical difference requires full_text evidence: {c.claim_id}")
-            if c.citations and citations and not set(c.citations)<=citations: errors.append(f"unknown citation for claim: {c.claim_id}")
+            if c.citations and citations is not None and not set(c.citations)<=citations: errors.append(f"unknown citation for claim: {c.claim_id}")
             if not c.citations: errors.append(f"claim missing citation: {c.claim_id}")
         return tuple(errors)
     def to_dict(self):
