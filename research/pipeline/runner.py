@@ -12,6 +12,7 @@ from ..value_gate.gate import ResearchValueGate
 from ..value_gate.schema import CandidateProblem, EvidenceBundle, GateDecision
 from ..experiment import ExperimentEvidenceRecord
 from ..claim_map import ClaimMap
+from ..artifact_store import ArtifactStore
 from .experiment_stages import ExperimentExecutionStage, ResultAnalysisStage
 from .g3 import check_drafting_readiness
 
@@ -43,7 +44,8 @@ class ResearchPipelineRunner:
             claim_map: ClaimMap | None = None,
             citation_registry: set[str] | None = None,
             required_claim_ids: tuple[str, ...] = (),
-            required_claim_types: tuple[str, ...] = ()) -> PipelineResult:
+            required_claim_types: tuple[str, ...] = (),
+            artifact_store: ArtifactStore | None = None) -> PipelineResult:
         artifacts: dict[str, dict[str, Any]] = {}
         self._stage(artifacts, "ideation", research_run_id, candidate.problem_statement)
         # The runner owns one record per pipeline stage. Direct router callers
@@ -65,6 +67,15 @@ class ResearchPipelineRunner:
         analysis = ResultAnalysisStage().run(research_run_id, execution, records=experiment_records, usage_sink=self.usage)
         artifacts["experiment_execution"] = self._artifact(research_run_id, execution.to_dict())
         artifacts["result_analysis"] = self._artifact(research_run_id, analysis.to_dict())
+        if artifact_store is not None:
+            artifact_store.register(path=execution.artifact_path, research_run_id=research_run_id,
+                                    artifact_type="experiment_execution", content=execution.to_dict())
+            artifact_store.register(path=analysis.artifact_path, research_run_id=research_run_id,
+                                    artifact_type="result_analysis", content=analysis.to_dict())
+            if claim_map is not None:
+                artifact_store.register(path=f"artifacts/{research_run_id}/claim_map.json",
+                                        research_run_id=research_run_id, artifact_type="claim_map",
+                                        content=claim_map.to_dict())
         supplied_claim_map = claim_map is not None
         if claim_map is None:
             claim_map = ClaimMap()
@@ -73,7 +84,8 @@ class ResearchPipelineRunner:
         readiness = check_drafting_readiness(value_gate=decision, execution=execution,
             analysis=analysis, claim_map=claim_map, evidence=evidence, usage_records=usage_records,
             experiment_records=experiment_records, citation_registry=citation_registry,
-            required_claim_ids=required_claim_ids, required_claim_types=required_claim_types)
+            required_claim_ids=required_claim_ids, required_claim_types=required_claim_types,
+            artifact_store=artifact_store)
         if experiment_records or supplied_claim_map:
             artifacts["drafting_g3"] = self._artifact(research_run_id, {"status": readiness.status, "missing": list(readiness.missing)})
         return PipelineResult(research_run_id, artifacts, evidence, decision,

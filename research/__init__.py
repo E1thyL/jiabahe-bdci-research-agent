@@ -15,6 +15,7 @@ from .usage import (
     make_phase_usage_record,
 )
 from .claim_map import ClaimLink, ClaimMap
+from .artifact_store import Artifact, ArtifactStore
 
 __all__ = [
     "ExperimentEvidenceRecord",
@@ -28,4 +29,5 @@ __all__ = [
     "emit_usage",
     "make_phase_usage_record",
     "ClaimLink", "ClaimMap",
+    "Artifact", "ArtifactStore",
 ]
