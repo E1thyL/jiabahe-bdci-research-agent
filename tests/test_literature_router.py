@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from research.literature import LiteratureRecord, LiteratureSearchStatus, ReplayLiteratureSource
+from research.literature import LiteratureRecord, LiteratureSearchStatus, OpenAlexLiteratureSource, ReplayLiteratureSource
 from research.literature.router import LiteratureRouter
 from research.runtime_config import LiteratureMode, ResearchRuntimeConfig
 from research.value_gate import CandidateProblem
@@ -49,6 +49,16 @@ def test_online_allowlist_accepts_openalex_only():
     assert online.calls == 1
 
 
+def test_openalex_adapter_exposes_source_name_for_allowlist(tmp_path):
+    online = OpenAlexLiteratureSource(
+        cache_dir=tmp_path, research_run_id="run-source", max_retries=0,
+        request_fn=lambda _url, _timeout: (200, b'{"results": []}'),
+    )
+    router = LiteratureRouter(ResearchRuntimeConfig("online_allowlist", ("openalex",)),
+                              offline=offline_source(), online=online)
+    assert router.search(candidate()).source_name == "openalex"
+
+
 def test_unknown_online_endpoint_is_rejected():
     class Bad(FakeOnline):
         API_URL = "https://example.org/search"
@@ -59,6 +69,29 @@ def test_unknown_online_endpoint_is_rejected():
 def test_configured_source_allowlist_is_enforced():
     with pytest.raises(ValueError, match="allowlisted"):
         LiteratureRouter(ResearchRuntimeConfig("auto", online_sources=("arxiv",)), offline=offline_source(), online=FakeOnline())
+
+
+@pytest.mark.parametrize("source", ["", "other"])
+def test_missing_or_wrong_source_name_is_rejected(source):
+    class BadSource(FakeOnline):
+        _source_name = source
+    with pytest.raises(ValueError, match="allowlisted"):
+        LiteratureRouter(ResearchRuntimeConfig("auto"), offline=offline_source(), online=BadSource())
+
+
+def test_online_allowlist_failure_still_records_pending_usage():
+    received = []
+    online = FakeOnline(error=TimeoutError("offline"))
+    router = LiteratureRouter(ResearchRuntimeConfig("online_allowlist"), offline=offline_source(), online=online)
+
+    class Sink:
+        def record(self, item):
+            received.append(item)
+
+    result = router.search(candidate(), usage_sink=Sink(), research_run_id="run-failed")
+    assert result.status == LiteratureSearchStatus.FAILED
+    assert received[0].phase.value == "literature"
+    assert received[0].measurement_status.value == "pending"
 
 
 def test_auto_falls_back_after_online_failure():

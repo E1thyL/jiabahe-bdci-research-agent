@@ -113,3 +113,18 @@ def test_api_key_not_in_request_error_or_artifact():
     serialized = c.endpoint + " " + str(exc.value)
     assert "test-secret" not in serialized
     assert "test-secret" not in c._artifact_path
+
+
+def test_failed_request_records_pending_usage_without_secret():
+    sink = Sink()
+    c = client(lambda *_: (_ for _ in ()).throw(TimeoutError("transport timeout")),
+               max_retries=1, usage_sink=sink, research_run_id="run-failed",
+               artifact_path="artifacts/run-failed/ideation.json")
+    with pytest.raises(RuntimeError):
+        c.generate("p", _usage_phase="ideation")
+    record = sink.records[0]
+    assert record.phase.value == "ideation"
+    assert record.measurement_status.value == "pending"
+    assert record.request_count == 2
+    assert record.retry_count == 1
+    assert record.input_tokens is None and record.output_tokens is None
