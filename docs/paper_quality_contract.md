@@ -11,8 +11,8 @@ or an external reviewer.
 ## 0. Existing code versus proposed extensions
 
 This contract separates what the code already enforces from what it proposes. A
-rule marked "(proposed)" is a target for a later implementation step; it is not a
-current capability.
+rule marked "(proposed)" or "target" is a goal for a later implementation step; it
+is not a current capability.
 
 Existing and reused verbatim from the code:
 
@@ -20,24 +20,29 @@ Existing and reused verbatim from the code:
   `experiment_design`, `drafting`, `internal_review`, `publication_review`.
 - `GateDecision`: `go`, `revise`, `no_go`.
 - `EvidenceStatus`: `verified`, `pending`, `insufficient`. Note: `insufficient` is
-  an `EvidenceStatus`, not a `GateDecision`. An evidence gap is expressed as
-  `decision = revise` with `evidence_status = insufficient`, never as a decision
-  named "insufficient".
-- `MeasurementStatus`: `observed`, `estimated`, `pending`.
+  an `EvidenceStatus`, not a `GateDecision`. In the current code an evidence gap is
+  reported through per-field states — `ValueGateDecision.literature.status` and
+  `ValueGateDecision.experiment.status` — while the gate still returns
+  `decision = revise`. There is no single `evidence_status` field today; a unified
+  `evidence_status` is proposed for later stage outputs (section 12).
 - `EvidenceItem.evidence_type` is restricted to `prior_work`, `limitation`,
   `dataset`, `baseline`, `metric`. Its `kind` view collapses `prior_work` and
   `limitation` to `literature`. There is no `experiment` type, so
   `EvidenceIndex.verified_experiment_ids()` returns empty and `experiment.status`
   stays `pending` under the current schema.
-- `ValueGateDecision`, `ResearchUsageRecord`, `aggregate_usage`, and the `topic`
-  policies (`required_baselines`, `required_metrics`).
+- `MeasurementStatus`: `observed`, `estimated`, `pending`.
+- `ValueGateDecision`, whose evidence state is exposed only as `literature.status`
+  and `experiment.status` (each an `EvidenceStatus`); `ResearchUsageRecord`,
+  `aggregate_usage`, and the `topic` policies (`required_baselines`,
+  `required_metrics`).
 
 Proposed by this contract and not yet implemented (collected in section 12):
 
 - A `ScientificSupportLevel` for evidence and claims.
 - An `ExperimentEvidenceRecord` to carry experiment provenance.
 - Two additional phases, `experiment_execution` and `result_analysis`.
-- Feasibility `access` and `license` evidence.
+- A unified `evidence_status` for stage outputs.
+- Feasibility `access` and `license` evidence and executability checks.
 - A drafting-gate `claim_map` and result artifact shape.
 
 The proposed pipeline, with new phases marked, is:
@@ -87,9 +92,10 @@ value_gate = go
 ```
 
 Each gate is deterministic and evidence-backed. A gate that does not pass returns
-`decision = revise` (fixable) or `decision = no_go`; a missing-evidence outcome is
-`decision = revise` with `evidence_status = insufficient`. No gate fabricates the
-missing state to move forward.
+`decision = revise` (fixable) or `decision = no_go`. On a missing-evidence outcome the
+gate returns `decision = revise` and the relevant per-field state is `insufficient`
+(`literature.status` today; a unified `evidence_status` is proposed, section 12). No
+gate fabricates the missing state to move forward.
 
 ## 3. Method design entry conditions (G1)
 
@@ -103,10 +109,13 @@ Entry to `method_design` requires all of:
 3. `closest_prior_work`, `gap`, and `difference` non-empty and backed by `verified`
    `prior_work` / `limitation` evidence at `full_text` support level for any
    technical-difference claim.
-4. Feasibility backed by executability evidence, not literature alone: dataset
-   availability and `license`, baseline runnability, and metric measurability.
-   `evidence_type` provides `dataset` / `baseline` / `metric`; `access` and
-   `license` fields are proposed (section 12).
+4. Feasibility. Target contract: feasibility is backed by executability evidence,
+   not literature alone — dataset availability and `license`, dataset `access`,
+   baseline runnability, and metric measurability. Current behavior: `gate.py` still
+   judges feasibility through `has_verified_literature()` over
+   `feasibility_evidence_ids`, plus non-empty `datasets` / `baselines` / `metrics`;
+   it does not verify access, license, runnability, or measurability. Those checks
+   and the `access` / `license` fields are proposed (section 12), not enforced today.
 5. `research_object` and `hypothesis` non-empty and falsifiable.
 
 The `method_design` artifact must contain (proposed; snake_case; carries
@@ -133,9 +142,10 @@ artifact.
   baseline. A single-variable change is required only for an ablation that isolates
   the claimed mechanism; distinct baselines are distinct methods and are not held to
   single-variable identity.
-- Statistical validity: the number of runs, a dispersion measure (standard deviation
-  or confidence interval), and the significance test all declared before results are
-  read.
+- Statistical validity: the number of runs, and a statistical method appropriate to
+  the metric type, declared before results are read. Report effect size, a confidence
+  interval, or a suitable dispersion measure. A significance test is not mandated for
+  every task; it is used where the metric and design warrant it.
 
 `experiment_execution` runs the plan and produces experiment evidence. Only a
 `verified` `ExperimentEvidenceRecord` (proposed, section 12) may move
@@ -166,7 +176,8 @@ search.
 `result_analysis` is a distinct phase. For each hypothesis it must state:
 
 - Metric values for the method and every baseline, with dispersion and the outcome of
-  the pre-declared test.
+  the pre-declared statistical method (effect size, a confidence interval, or a
+  suitable dispersion measure).
 - A verdict mapped to the hypothesis: `supported`, `not_supported`, or
   `inconclusive` — never mapped to a desired narrative.
 - Ablations that isolate the claimed mechanism.
@@ -176,8 +187,8 @@ search.
   `experiment` support level.
 
 No result may be reported that is not reproducible from a stored artifact. A metric
-improvement reported without dispersion or a test is `decision = revise` with
-`evidence_status = insufficient`, not a positive result.
+improvement reported without dispersion or an appropriate statistical method returns
+`decision = revise` (evidence state `insufficient`), not a positive result.
 
 ## 6. Negative-result and honesty rules
 
@@ -185,7 +196,7 @@ The pipeline returns a truthful state rather than a fabricated success.
 
 - `not_supported` is a valid, publishable outcome and proceeds to drafting as a
   negative or null result, but only when the experiment is sufficient (required
-  baselines and metrics covered, enough runs for the declared test), the hypothesis
+  baselines and metrics covered, enough runs for the declared method), the hypothesis
   was declared in advance, and the conclusion is interpretable.
 - `inconclusive` does not automatically proceed to drafting. Undersampling, execution
   failure, or an insensitive metric return `decision = revise`. An `inconclusive`
@@ -195,9 +206,9 @@ The pipeline returns a truthful state rather than a fabricated success.
   failed search into a `verified` or positive claim.
 - Search `failed` / `empty` / `partial` states and record-level incompleteness stay
   distinguishable; none of them yields `verified` evidence or a citation.
-- A run that cannot reach a defensible paper returns `decision = revise` (with
-  `evidence_status = insufficient` when the cause is missing evidence) at the pipeline
-  boundary instead of emitting a low-quality draft.
+- A run that cannot reach a defensible paper returns `decision = revise` at the
+  pipeline boundary (evidence state `insufficient` when the cause is missing evidence)
+  instead of emitting a low-quality draft.
 
 ## 7. Claim-evidence-citation constraint
 
@@ -225,11 +236,11 @@ Entry to `drafting` requires all of:
    (proposed) covering every required metric for every required baseline, so that
    `experiment.status = verified`.
 2. A complete result artifact: for each hypothesis, a verdict plus metric values,
-   dispersion, and the pre-declared test outcome (section 5).
+   dispersion, and the outcome of the pre-declared statistical method (section 5).
 3. A `claim_map` (proposed): every claim intended for the paper mapped to its
    `evidence_id` or experiment record and its declared support level.
-4. Statistics and failure analysis present: runs, dispersion, and test recorded;
-   failure and limitation analysis on file.
+4. Statistics and failure analysis present: runs, dispersion, and the chosen
+   statistical method recorded; failure and limitation analysis on file.
 
 If any condition fails, G3 returns `decision = revise` and names the missing artifact.
 `go` from the Value Gate is not sufficient for drafting on its own.
@@ -245,7 +256,7 @@ dimension:
 | Originality | Is there an explicit, evidence-backed gap and difference? | novelty asserted from metadata only |
 | Significance | Does the result matter beyond one narrow case? | single-case result generalized without support |
 | Clarity | Is the method and evaluation stated precisely? | key protocol undefined |
-| Reproducibility | Can a reader rerun at one of the three levels? | missing seeds, config, or corpus |
+| Reproducibility | Can a reader rerun or audit at one of the three levels? | missing seeds, config, or corpus |
 | Limitations | Are negatives, limits, and resource costs disclosed? | hidden negative result or omitted cost |
 
 Overall `pass` requires no dimension below 3 and zero unresolved `reviewer_objections`.
@@ -254,14 +265,19 @@ subjective note. A failing review returns `decision = revise` and names the arti
 to fix.
 
 Competition scoring is tracked separately from the paper rubric. The official score
-uses four weighted items, 60 / 15 / 10 / 15. The 60 corresponds to paper quality,
-which this rubric governs. The remaining 40 covers framework contribution,
-documentation, and the resource report. The exact axis names and the 15 / 10 / 15
-assignment follow the official rubric and are unconfirmed here (see
-`competition_alignment.md`). The seven review focuses recorded there (maturity,
-advancedness, novelty, practicality, generality, social benefit, commercial value)
-are retained as competition-side review aids, not as the paper's primary evaluation
-axes.
+uses four weighted items:
+
+| Scored item | Weight | Governed by |
+|---|---|---|
+| Paper quality | 60 | this rubric |
+| Agent system capability | 15 | system and framework evidence |
+| Resource consumption (efficiency) | 10 | the resource report (section 13) |
+| openJiuwen contribution | 15 | framework contribution material |
+
+These four items are the total score; nothing replaces them. The seven review focuses
+(maturity, advancedness, novelty, practicality, generality, social benefit, commercial
+value) are auxiliary observation dimensions for paper quality and expert review only;
+they do not substitute for the four scored items.
 
 Internal review is deterministic and offline in this contract. The external Stanford
 Agentic Reviewer is a later, separate gate and is not invoked here.
@@ -281,7 +297,7 @@ The artifact carries `research_run_id` and must include:
 - A reproducibility appendix stating all three levels (section 4): the offline fixture
   test, the controlled experiment reproduction with its model-endpoint dependency, and
   the stored-artifact audit; with seeds, configs, corpus identifier, `LITERATURE_MODE`,
-  and the rerun command for each level that applies.
+  and the rerun or audit procedure for each applicable level.
 - A resource report aggregated from the phase-level `ResearchUsageRecord` summaries,
   with honest statuses.
 
@@ -316,11 +332,16 @@ later implementation step must land; naming and shape are indicative.
   `verified_experiment_ids()` is always empty and `experiment.status` is always
   `pending`. A separate record must carry experiment provenance: `research_run_id`,
   method and baseline identifiers, config, seed, metric values, dispersion, and the
-  test outcome, with its own `verification_status`.
+  statistical outcome, with its own `verification_status`.
 - Two phases in `ResearchPhase`: `experiment_execution` and `result_analysis`. Without
   them, real experiment cost and result quality are hidden inside `experiment_design`.
-- Feasibility `access` and `license` evidence, so feasibility does not rest on
-  literature alone.
+- A unified `evidence_status` for stage outputs. Today evidence state is exposed only
+  as `ValueGateDecision.literature.status` and `experiment.status`; there is no single
+  `evidence_status` field.
+- Feasibility `access` and `license` evidence plus dataset, baseline, and metric
+  executability checks. Today `gate.py` judges feasibility via
+  `has_verified_literature()` and does not verify access, license, runnability, or
+  measurability.
 - A `claim_map` structure and a result artifact shape for the drafting gate
   (section 8).
 
