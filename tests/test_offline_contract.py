@@ -63,15 +63,18 @@ def test_g3_fails_closed_without_citation_registry():
     assert "citation_registry_missing" in result.missing
 
 def test_g3_accepts_complete_artifact_store():
+    from test_experiment_stages import verified_record
     store = ArtifactStore()
-    store.register(path="artifacts/r/exp.json", research_run_id="r", artifact_type="experiment_execution", content={"ok": 1})
+    record = verified_record("r")
+    store.register(path="artifacts/r/exp.json", research_run_id="r", artifact_type="experiment_execution", content={"score": 0.8})
+    record = record.__class__(**{**record.to_dict(), "artifact_path": "artifacts/r/exp.json", "metric_artifact_refs": {"score": "artifacts/r/exp.json#/score"}})
     store.register(path="artifacts/r/analysis.json", research_run_id="r", artifact_type="result_analysis", content={"ok": 1})
     claim = ClaimMap((ClaimLink("c1", "limitation", "limit", ("e1",), ("cite-1",), ScientificSupportLevel.FULL_TEXT),), "artifacts/r/claim_map.json")
     store.register(path=claim.artifact_path, research_run_id="r", artifact_type="claim_map", content=claim.to_dict())
     result = check_drafting_readiness(value_gate=SimpleNamespace(decision="go"),
-        execution=SimpleNamespace(verified_record_ids=("x",), status="verified", research_run_id="r", artifact_path="artifacts/r/exp.json"),
+        execution=SimpleNamespace(verified_record_ids=(record.record_id,), status="verified", research_run_id="r", artifact_path="artifacts/r/exp.json"),
         analysis=SimpleNamespace(status="ready", artifact_path="artifacts/r/analysis.json"), claim_map=claim,
-        evidence=EvidenceBundle((item(),)), experiment_records=(), citation_registry={"research_run_id":"r", "citations":["cite-1"]},
+        evidence=EvidenceBundle((item(),)), experiment_records=(record,), citation_registry={"research_run_id":"r", "citations":["cite-1"]},
         usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
     assert result.status == "ready"
 
@@ -89,3 +92,61 @@ def test_g3_requires_metric_artifact_ref():
         analysis=analysis, claim_map=claim, evidence=EvidenceBundle((item(),)), experiment_records=(record,),
         citation_registry={"research_run_id":"r", "citations":["cite"]}, usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
     assert any("metric_artifact" in x for x in result.missing)
+
+
+def _g3_metric_case(content, ref="artifacts/r/metric.json#/score", metric=0.8, *, path="artifacts/r/metric.json", artifact_type="metric"):
+    from test_experiment_stages import verified_record
+    record = verified_record("r")
+    record = record.__class__(**{**record.to_dict(), "metric_values": {"score": metric}, "artifact_path": path,
+                                "metric_artifact_refs": {"score": ref}})
+    execution = SimpleNamespace(verified_record_ids=(record.record_id,), status="verified", research_run_id="r",
+                                artifact_path="artifacts/r/execution.json")
+    analysis = SimpleNamespace(status="ready", artifact_path="artifacts/r/analysis.json")
+    claim = ClaimMap((ClaimLink("c", "limitation", "x", ("e1",), ("cite",)),), "artifacts/r/claim.json")
+    store = ArtifactStore()
+    store.register(path=execution.artifact_path, research_run_id="r", artifact_type="experiment_execution", content={"ok": 1})
+    store.register(path=analysis.artifact_path, research_run_id="r", artifact_type="result_analysis", content={"ok": 1})
+    store.register(path=claim.artifact_path, research_run_id="r", artifact_type="claim_map", content=claim.to_dict())
+    store.register(path=path, research_run_id="r", artifact_type=artifact_type, content=content)
+    result = check_drafting_readiness(value_gate=SimpleNamespace(decision="go"), execution=execution, analysis=analysis,
+        claim_map=claim, evidence=EvidenceBundle((item(),)), experiment_records=(record,),
+        citation_registry={"research_run_id": "r", "citations": ["cite"]},
+        usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
+    return result
+
+
+def test_g3_metric_pointer_nested_and_escaped_fields():
+    assert _g3_metric_case({"nested": {"score": 0.8}}, "artifacts/r/metric.json#/nested/score").ready
+    assert _g3_metric_case({"a/b": 0.8}, "artifacts/r/metric.json#/a~1b").ready
+    assert _g3_metric_case({"a~b": 0.8}, "artifacts/r/metric.json#/a~0b").ready
+
+
+def test_g3_metric_pointer_missing_empty_and_invalid_are_blocked():
+    for content, ref in [({"other": 1}, "artifacts/r/metric.json#/score"), ({"score": None}, "artifacts/r/metric.json#/score"),
+                         ({"score": 0.8}, "artifacts/r/metric.json#score"), ({"score": 0.8}, "artifacts/r/metric.json#/bad~2")]:
+        assert not _g3_metric_case(content, ref).ready
+
+
+def test_g3_metric_value_and_type_mismatch_are_blocked():
+    assert not _g3_metric_case({"score": 0.7}).ready
+    assert not _g3_metric_case({"score": 1}, metric=1.0).ready
+
+
+def test_g3_metric_path_scope_and_type_are_blocked():
+    assert not _g3_metric_case({"score": 0.8}, artifact_type="claim_map").ready
+
+
+def test_g3_verified_record_without_metric_refs_is_blocked():
+    record = SimpleNamespace(is_verified=True, record_id="exp-1", metric_values={"score": 0.8}, metric_artifact_refs={})
+    execution = SimpleNamespace(verified_record_ids=("exp-1",), status="verified", research_run_id="r", artifact_path="artifacts/r/execution.json")
+    analysis = SimpleNamespace(status="ready", artifact_path="artifacts/r/analysis.json")
+    claim = ClaimMap((ClaimLink("c", "limitation", "x", ("e1",), ("cite",)),), "artifacts/r/claim.json")
+    store = ArtifactStore()
+    for path, kind in ((execution.artifact_path, "experiment_execution"), (analysis.artifact_path, "result_analysis"), (claim.artifact_path, "claim_map")):
+        store.register(path=path, research_run_id="r", artifact_type=kind, content={"ok": 1})
+    result = check_drafting_readiness(value_gate=SimpleNamespace(decision="go"), execution=execution, analysis=analysis,
+        claim_map=claim, evidence=EvidenceBundle((item(),)), experiment_records=(record,),
+        citation_registry={"research_run_id": "r", "citations": ["cite"]},
+        usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
+    assert not result.ready
+    assert "metric_artifact_refs_missing" in result.missing
