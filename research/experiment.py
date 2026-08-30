@@ -69,6 +69,7 @@ class ExperimentEvidenceRecord:
     verification_status: "EvidenceStatus | str" = "pending"
     artifact_path: str = ""
     metric_artifact_refs: dict[str, str] = field(default_factory=dict)
+    execution_mode: str = "offline_fixture"
 
     def __post_init__(self) -> None:
         from .value_gate.schema import EvidenceStatus, ScientificSupportLevel
@@ -77,6 +78,8 @@ class ExperimentEvidenceRecord:
             raise ValueError("record_id must not be empty")
         if not self.research_run_id.strip():
             raise ValueError("research_run_id must not be empty")
+        if self.execution_mode not in {"offline_fixture", "simulated", "real"}:
+            raise ValueError("unsupported execution_mode")
 
         try:
             execution_status = ExperimentExecutionStatus(self.execution_status)
@@ -189,6 +192,7 @@ class ExperimentEvidenceRecord:
             "verification_status": self.verification_status.value,
             "artifact_path": self.artifact_path,
             "metric_artifact_refs": self.metric_artifact_refs,
+            "execution_mode": self.execution_mode,
         }
 
     def to_json(self) -> str:
