@@ -50,3 +50,11 @@ def test_g3_rejects_cross_run_artifacts():
         analysis=SimpleNamespace(status="ready", artifact_path="artifacts/r/analysis.json"),
         claim_map=ClaimMap(), evidence=EvidenceBundle(), usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),))
     assert result.status == "blocked"
+
+def test_g3_fails_closed_without_citation_registry():
+    result = check_drafting_readiness(
+        value_gate=SimpleNamespace(decision="go"),
+        execution=SimpleNamespace(verified_record_ids=(), status="pending", research_run_id="r", artifact_path="artifacts/r/exp.json"),
+        analysis=SimpleNamespace(status="pending", artifact_path="artifacts/r/analysis.json"),
+        claim_map=ClaimMap(), evidence=EvidenceBundle(), usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),))
+    assert "citation_registry_missing" in result.missing

@@ -34,6 +34,15 @@ def test_verified_records_are_preserved_for_analysis():
     assert analysis.status == "pending"
     assert analysis.experiment_record_ids == ("exp-1",)
 
+def test_failed_record_with_metrics_is_excluded_from_supported_analysis():
+    record = verified_record()
+    failed = record.__class__(**{**record.to_dict(), "record_id": "exp-failed", "execution_status": "failed", "verification_status": "pending"})
+    execution = ExperimentExecutionStage().run("run-1", (record, failed))
+    analysis = ResultAnalysisStage().run("run-1", execution, records=(record, failed))
+    assert analysis.analyses["exp-failed"]["status"] == "failed"
+    assert analysis.analyses["exp-failed"]["exclusion_reason"]
+    assert analysis.status == "inconclusive"
+
 
 def test_cross_run_records_are_rejected():
     with pytest.raises(ValueError, match="match research_run_id"):
