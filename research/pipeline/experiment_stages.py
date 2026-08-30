@@ -100,9 +100,17 @@ class ResultAnalysisStage:
         else:
             # Conservative descriptive analysis.  No significance claim is made.
             analyses = {}
+            excluded = []
             for record in records:
+                eligible = (record.execution_status.value == "completed"
+                            and record.is_verified
+                            and record.record_id in execution.verified_record_ids
+                            and bool(record.metric_values))
+                if not eligible:
+                    excluded.append(record.record_id)
                 analyses[record.record_id] = {
-                    "status": "supported" if record.metric_values else "inconclusive",
+                    "status": "supported" if eligible else ("failed" if record.execution_status.value == "failed" else "inconclusive"),
+                    "exclusion_reason": None if eligible else "record is not a verified successful execution with valid metrics",
                     "analysis_method": record.analysis_method or "descriptive",
                     "metrics": record.metric_values,
                     "dispersion": record.dispersion,
@@ -115,7 +123,8 @@ class ResultAnalysisStage:
                     "limitations": (["effect_size_not_computable_without_paired_baseline"]
                                     if record.baseline_id else []),
                 }
-            status, reason = "ready", "descriptive analysis generated"
+            status = "ready" if not excluded else "inconclusive"
+            reason = "descriptive analysis generated" if not excluded else "some records excluded from positive analysis"
         artifact = ResultAnalysisArtifact(
             research_run_id, status, execution.verified_record_ids,
             f"artifacts/{research_run_id}/result_analysis.json", analyses, reason,
