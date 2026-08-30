@@ -19,6 +19,8 @@ class ResearchPhase(StrEnum):
     LITERATURE = "literature"
     METHOD_DESIGN = "method_design"
     EXPERIMENT_DESIGN = "experiment_design"
+    EXPERIMENT_EXECUTION = "experiment_execution"
+    RESULT_ANALYSIS = "result_analysis"
     DRAFTING = "drafting"
     INTERNAL_REVIEW = "internal_review"
     PUBLICATION_REVIEW = "publication_review"
