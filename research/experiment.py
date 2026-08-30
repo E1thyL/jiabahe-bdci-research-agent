@@ -24,13 +24,19 @@ class ExperimentExecutor:
     def run(self, *, experiment_id: str, research_run_id: str, method: str,
             baseline: str, dataset_provenance: str, seed: int, config: dict[str, Any] | None = None,
             fixture: Any = None) -> "ExperimentEvidenceRecord":
-        payload = json.dumps([experiment_id, method, baseline, dataset_provenance, seed, config or {}, fixture], sort_keys=True, default=str)
+        try:
+            fixture_value = fixture() if callable(fixture) else fixture
+        except Exception:
+            return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
+                method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
+                execution_status=ExperimentExecutionStatus.FAILED, verification_status="pending")
+        payload = json.dumps([experiment_id, method, baseline, dataset_provenance, seed, config or {}, fixture_value], sort_keys=True, default=str)
         digest = hashlib.sha256(payload.encode()).hexdigest()
         value = int(digest[:8], 16) / 0xFFFFFFFF
         path = f"artifacts/{research_run_id}/{experiment_id}.json"
         return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
             method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
-            dataset_source_uri="offline://fixture", dataset_source_hash=hashlib.sha256(str(fixture).encode()).hexdigest(),
+            dataset_source_uri="offline://fixture", dataset_source_hash=hashlib.sha256(str(fixture_value).encode()).hexdigest(),
             config_snapshot=config or {}, seed=seed, metric_values={"fixture_score": value},
             dispersion={"fixture_score": 0.0}, run_count=1, analysis_method="deterministic_fixture_mean",
             execution_status=ExperimentExecutionStatus.COMPLETED, verification_status="pending",
