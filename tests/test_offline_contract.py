@@ -4,6 +4,8 @@ from research.pipeline.g3 import check_drafting_readiness
 from research.value_gate import EvidenceBundle, EvidenceItem, EvidenceStatus, ScientificSupportLevel
 from types import SimpleNamespace
 from research import ArtifactStore
+from research.pipeline.experiment_stages import ExperimentExecutionStage, ResultAnalysisStage
+from research.value_gate.schema import GateDecision
 
 def item(level=ScientificSupportLevel.FULL_TEXT):
     return EvidenceItem("e1", "https://example.org/p", "Paper", ("A",), 2024, "V", "excerpt", "prior_work", EvidenceStatus.VERIFIED, "hash", level)
@@ -72,3 +74,18 @@ def test_g3_accepts_complete_artifact_store():
         evidence=EvidenceBundle((item(),)), experiment_records=(), citation_registry={"research_run_id":"r", "citations":["cite-1"]},
         usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
     assert result.status == "ready"
+
+def test_g3_requires_metric_artifact_ref():
+    from test_experiment_stages import verified_record
+    record = verified_record("r")
+    execution = ExperimentExecutionStage().run("r", (record,))
+    analysis = ResultAnalysisStage().run("r", execution, records=(record,))
+    store = ArtifactStore()
+    store.register(path=execution.artifact_path, research_run_id="r", artifact_type="experiment_execution", content={"ok":1})
+    store.register(path=analysis.artifact_path, research_run_id="r", artifact_type="result_analysis", content={"ok":1})
+    claim = ClaimMap((ClaimLink("c", "limitation", "x", ("e1",), ("cite",)),), "artifacts/r/claim.json")
+    store.register(path=claim.artifact_path, research_run_id="r", artifact_type="claim_map", content={"ok":1})
+    result = check_drafting_readiness(value_gate=SimpleNamespace(decision="go"), execution=execution,
+        analysis=analysis, claim_map=claim, evidence=EvidenceBundle((item(),)), experiment_records=(record,),
+        citation_registry={"research_run_id":"r", "citations":["cite"]}, usage_records=(SimpleNamespace(research_run_id="r", measurement_status="pending"),), artifact_store=store)
+    assert any("metric_artifact" in x for x in result.missing)
