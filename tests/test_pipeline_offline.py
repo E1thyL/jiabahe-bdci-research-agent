@@ -58,10 +58,11 @@ def test_offline_pipeline_runs_through_review_with_run_scoped_artifacts():
     sink, client = Sink(), FakeClient()
     result = runner(sink, client).run(candidate(evidence_id), research_run_id="research-001", topic_config={"query": "q"})
 
-    assert result.status == "completed"
-    assert set(result.artifacts) == {"ideation", "literature", "value_gate", "method_design", "experiment_design", "drafting", "internal_review", "publication_review"}
+    assert result.status == "drafting_blocked"
+    assert set(result.artifacts) == {"ideation", "literature", "value_gate", "method_design", "experiment_design", "experiment_execution", "result_analysis"}
     assert all(a["research_run_id"] == "research-001" for a in result.artifacts.values())
-    assert len(client.calls) == 6
+    assert len(client.calls) == 3
+    assert result.artifacts["result_analysis"]["claim_map"] is None
     assert all(r.research_run_id == "research-001" for r in sink.records)
 
 

@@ -10,6 +10,7 @@ from ..usage import UsageSink, make_phase_usage_record
 from ..value_gate.evidence import AdapterEvidenceCollector
 from ..value_gate.gate import ResearchValueGate
 from ..value_gate.schema import CandidateProblem, EvidenceBundle, GateDecision
+from .experiment_stages import ExperimentExecutionStage, ResultAnalysisStage
 
 
 class ModelClient(Protocol):
@@ -49,9 +50,14 @@ class ResearchPipelineRunner:
         artifacts["value_gate"] = self._artifact(research_run_id, decision.to_dict())
         if decision.decision != GateDecision.GO:
             return PipelineResult(research_run_id, artifacts, evidence, decision, "revise")
-        for phase in ("method_design", "experiment_design", "drafting", "internal_review", "publication_review"):
+        for phase in ("method_design", "experiment_design"):
             self._stage(artifacts, phase, research_run_id, f"placeholder for {phase}")
-        return PipelineResult(research_run_id, artifacts, evidence, decision, "completed")
+        execution = ExperimentExecutionStage().run(research_run_id, usage_sink=self.usage)
+        analysis = ResultAnalysisStage().run(research_run_id, execution, usage_sink=self.usage)
+        artifacts["experiment_execution"] = self._artifact(research_run_id, execution.to_dict())
+        artifacts["result_analysis"] = self._artifact(research_run_id, analysis.to_dict())
+        # G3 remains closed: no verified result coverage and no claim_map.
+        return PipelineResult(research_run_id, artifacts, evidence, decision, "drafting_blocked")
 
     def _stage(self, artifacts: dict[str, dict[str, Any]], phase: str, run_id: str, prompt: str) -> None:
         content = f"placeholder for {phase}"
