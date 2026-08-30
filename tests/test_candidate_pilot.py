@@ -176,6 +176,114 @@ def test_main_artifact_paths_are_run_scoped_across_runs(tmp_path, monkeypatch):
         assert (tmp_path / ideation["artifact_path"]).exists()
 
 
+def test_pilot_keeps_scientific_review_at_revise_for_abstract_difference(tmp_path):
+    class AbstractAdapter:
+        def search(self, candidate, topic_config=None):
+            return LiteratureSearchResult(
+                candidate.problem_statement,
+                str((topic_config or {}).get("query", "")),
+                "replay",
+                records=(LiteratureRecord(
+                    source_uri="https://example.test/prior",
+                    title="Prior Work",
+                    authors=("Author",),
+                    year=2025,
+                    venue="Fixture Venue",
+                    excerpt="An abstract-level method overview.",
+                    evidence_type="prior_work",
+                    support_level="abstract",
+                ),),
+                status="success",
+            )
+
+    from scripts.run_candidate_pilot import _UsageCollector
+
+    sink = _UsageCollector()
+    report = run_pilot(
+        run_id="run-scientific-revise",
+        max_candidates=1,
+        client=UsageClient(
+            usage_sink=sink,
+            research_run_id="run-scientific-revise",
+            artifact_path=".pilot-cache/run-scientific-revise/candidate_pilot.json",
+        ),
+        router=LiteratureRouter(
+            ResearchRuntimeConfig("offline"), offline=AbstractAdapter()
+        ),
+        artifact_dir=tmp_path,
+        secret="test-secret",
+        usage_sink=sink,
+        write_artifact=False,
+    )
+
+    result = report["candidates"][0]
+    assert result["mechanical_gate_decision"] == "go"
+    assert result["scientific_review_decision"] == "revise"
+    assert result["status"] == "insufficient"
+    assert result["novelty_gap"]["status"] == "insufficient"
+    assert result["novelty_gap"]["unsupported_claims"]
+    assert not (
+        result["novelty_gap"]["status"] == "supported"
+        and result["novelty_gap"]["unsupported_claims"]
+        and result["scientific_review_decision"] == "go"
+    )
+
+
+def test_pilot_fail_closes_inconsistent_supported_novelty_report(tmp_path, monkeypatch):
+    import scripts.run_candidate_pilot as pilot
+    from research.literature.novelty import NoveltyGapReport
+
+    class FullTextAdapter:
+        def search(self, candidate, topic_config=None):
+            return LiteratureSearchResult(
+                candidate.problem_statement,
+                str((topic_config or {}).get("query", "")),
+                "replay",
+                records=(LiteratureRecord(
+                    source_uri="https://example.test/prior",
+                    title="Prior Work",
+                    authors=("Author",),
+                    year=2025,
+                    venue="Fixture Venue",
+                    excerpt="Full text evidence.",
+                    evidence_type="prior_work",
+                    support_level="full_text",
+                ),),
+                status="success",
+            )
+
+    class InconsistentBuilder:
+        def build(self, candidate, bundle, quality):
+            evidence_id = next(iter(bundle.ids()))
+            return NoveltyGapReport(
+                closest_prior_work_ids=(evidence_id,),
+                supported_gap="gap",
+                candidate_difference="difference",
+                evidence_ids=(evidence_id,),
+                confidence=0.5,
+                unsupported_claims=("technical difference is unsupported",),
+                status="supported",
+            )
+
+    monkeypatch.setattr(pilot, "NoveltyGapBuilder", InconsistentBuilder)
+    report = run_pilot(
+        run_id="run-inconsistent-novelty",
+        max_candidates=1,
+        client=FakeClient(),
+        router=LiteratureRouter(
+            ResearchRuntimeConfig("offline"), offline=FullTextAdapter()
+        ),
+        artifact_dir=tmp_path,
+        secret="test-secret",
+        write_artifact=False,
+    )
+
+    result = report["candidates"][0]
+    assert result["mechanical_gate_decision"] == "go"
+    assert result["scientific_review_decision"] == "revise"
+    assert result["status"] == "insufficient"
+
+
 def test_candidate_schema_contains_required_fields():
     candidate = parse_candidate("memory_engine", response())
     assert isinstance(candidate, CandidateProblem)

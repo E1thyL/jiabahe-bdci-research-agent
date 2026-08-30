@@ -100,13 +100,21 @@ def run_pilot(*, run_id: str, max_candidates: int, client: Any, router: Literatu
         quality = LiteratureQualityFilter().evaluate(candidate, bundle, search)
         novelty = NoveltyGapBuilder().build(candidate, bundle, quality)
         decision = ResearchValueGate().evaluate(candidate, bundle)
+        candidate_status = novelty.status
+        if novelty.unsupported_claims and candidate_status == "supported":
+            candidate_status = "insufficient"
+        scientific_review_decision = (
+            "revise"
+            if candidate_status != "supported" or novelty.unsupported_claims
+            else decision.decision.value
+        )
         results.append({"topic": topic, "candidate": _safe(candidate.__dict__, secret), "search_status": search.status.value,
                         "evidence_ids": list(evidence_ids), "source": search.source_name,
                         "artifact_path": search.artifact_path, "quality": _safe(quality.to_dict(), secret),
                         "novelty_gap": _safe(novelty.to_dict(), secret),
                         "mechanical_gate_decision": decision.decision.value,
-                        "scientific_review_decision": "revise" if novelty.status != "supported" else decision.decision.value,
-                        "status": novelty.status, "reason": list(decision.reviewer_objections) + list(novelty.unsupported_claims),
+                        "scientific_review_decision": scientific_review_decision,
+                        "status": candidate_status, "reason": list(decision.reviewer_objections) + list(novelty.unsupported_claims),
                         "closest_prior_work_ids": list(novelty.closest_prior_work_ids),
                         "supported_gap": novelty.supported_gap, "candidate_difference": novelty.candidate_difference,
                         "baseline_plan": list(candidate.baselines), "metric_plan": list(candidate.metrics)})

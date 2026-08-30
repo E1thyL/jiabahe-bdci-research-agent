@@ -65,9 +65,10 @@ For example, the LongLLMLingua item has source hash
 Its normalized excerpt is not a reliable technical abstract in this snapshot,
 so it proves record provenance but not the claimed method details. The first
 query also returned unrelated preservation papers. The resulting gap is a
-candidate gap only, not evidence-backed novelty. Status: `supported` by the
-current structural builder, but scientifically `insufficient`; pilot decision:
-`revise`.
+candidate gap only, not evidence-backed novelty. In this historical run the
+structural builder reported `supported`, while the scientific interpretation
+was `insufficient`; the fail-closed builder now reports `insufficient` for the
+same abstract-only evidence. The pilot decision remains `revise`.
 
 ## Candidate B: memory engine
 

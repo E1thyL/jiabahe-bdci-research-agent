@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from research.literature import (
     LiteratureQualityFilter,
     LiteratureRecord,
@@ -54,7 +56,7 @@ def _bundle_candidate(bundle: EvidenceBundle) -> CandidateProblem:
 
 def test_complete_replay_snapshot_quality_and_novelty_end_to_end() -> None:
     candidate = _candidate()
-    result = ReplayLiteratureSource({"fixture query": (_record(),)}).search(
+    result = ReplayLiteratureSource({"fixture query": (_record(support_level="full_text"),)}).search(
         candidate, {"query": "fixture query"}
     )
     bundle = result.to_evidence_bundle()
@@ -68,6 +70,78 @@ def test_complete_replay_snapshot_quality_and_novelty_end_to_end() -> None:
     assert novelty.closest_prior_work_ids == quality.usable_evidence_ids
     assert novelty.evidence_ids == quality.usable_evidence_ids
     assert decision.decision.value == "go"
+
+
+@pytest.mark.parametrize("support_level", ["metadata", "abstract"])
+def test_weak_literature_support_cannot_support_candidate_difference(support_level: str) -> None:
+    record = _record(support_level=support_level)
+    result = LiteratureSearchResult(
+        "fixture problem", "fixture query", "replay", records=(record,), status="success"
+    )
+    bundle = result.to_evidence_bundle()
+    candidate = _bundle_candidate(bundle)
+    quality = LiteratureQualityFilter().evaluate(candidate, bundle, result)
+
+    novelty = NoveltyGapBuilder().build(candidate, bundle, quality)
+
+    assert novelty.status == "insufficient"
+    assert novelty.supported_gap == ""
+    assert novelty.candidate_difference == ""
+    assert any("full_text" in value for value in novelty.unsupported_claims)
+
+
+def test_unsupported_claims_force_insufficient_even_when_all_references_exist() -> None:
+    record = _record(support_level="full_text")
+    result = LiteratureSearchResult(
+        "fixture problem", "fixture query", "replay", records=(record,), status="success"
+    )
+    bundle = result.to_evidence_bundle()
+    candidate = _bundle_candidate(bundle)
+    quality = LiteratureQualityFilter().evaluate(candidate, bundle, result)
+    quality = quality.__class__(
+        **{**quality.to_dict(), "unsupported_claims": ("technical difference needs a primary source",)}
+    )
+
+    novelty = NoveltyGapBuilder().build(candidate, bundle, quality)
+
+    assert novelty.status == "insufficient"
+    assert novelty.supported_gap == ""
+    assert novelty.candidate_difference == ""
+    assert novelty.unsupported_claims == ("technical difference needs a primary source",)
+
+
+@pytest.mark.parametrize("search_status", ["partial", "failed"])
+def test_incomplete_literature_search_remains_pending(search_status: str) -> None:
+    record = _record(support_level="full_text")
+    result = LiteratureSearchResult(
+        "fixture problem", "fixture query", "replay", records=(record,), status=search_status
+    )
+    bundle = result.to_evidence_bundle()
+    candidate = _bundle_candidate(bundle)
+    quality = LiteratureQualityFilter().evaluate(candidate, bundle, result)
+
+    novelty = NoveltyGapBuilder().build(candidate, bundle, quality)
+
+    assert novelty.status == "pending"
+    assert novelty.supported_gap == ""
+    assert novelty.candidate_difference == ""
+
+
+def test_full_text_evidence_can_support_complete_technical_difference() -> None:
+    record = _record(support_level="full_text")
+    result = LiteratureSearchResult(
+        "fixture problem", "fixture query", "replay", records=(record,), status="success"
+    )
+    bundle = result.to_evidence_bundle()
+    candidate = _bundle_candidate(bundle)
+    quality = LiteratureQualityFilter().evaluate(candidate, bundle, result)
+
+    novelty = NoveltyGapBuilder().build(candidate, bundle, quality)
+
+    assert novelty.status == "supported"
+    assert novelty.supported_gap == candidate.gap
+    assert novelty.candidate_difference == candidate.difference
+    assert novelty.unsupported_claims == ()
 
 
 def test_quality_reports_missing_year_and_venue_without_no_go() -> None:

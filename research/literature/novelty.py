@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from ..value_gate.schema import CandidateProblem, EvidenceBundle, EvidenceStatus
+from ..value_gate.schema import (
+    CandidateProblem,
+    EvidenceBundle,
+    EvidenceStatus,
+    ScientificSupportLevel,
+)
 from .quality import LiteratureQualityReport
 
 
@@ -51,7 +56,7 @@ class NoveltyGapBuilder:
             if evidence_id in verified
         )
         evidence_ids = tuple(dict.fromkeys(prior_ids + claim_ids))
-        unsupported: list[str] = []
+        unsupported: list[str] = list(quality.unsupported_claims)
         if not prior_ids:
             unsupported.append("no verified closest prior work is available")
         missing_claim_ids = set(candidate.novelty_evidence_ids) - set(claim_ids)
@@ -62,20 +67,47 @@ class NoveltyGapBuilder:
             )
         if candidate.difference.strip() and not candidate.hypothesis.strip():
             unsupported.append("candidate difference is not linked to a hypothesis")
-        if candidate.difference.strip() and claim_ids:
-            unsupported.append(
-                "abstract/excerpt evidence cannot establish a complete technical difference"
-            )
 
+        referenced_items = tuple(
+            item for evidence_id in evidence_ids
+            if (item := bundle.get(evidence_id)) is not None
+        )
+        weak_ids = tuple(
+            item.evidence_id
+            for item in referenced_items
+            if not item.support_level.supports(ScientificSupportLevel.FULL_TEXT)
+        )
+        if candidate.difference.strip() and claim_ids and weak_ids:
+            unsupported.append(
+                "abstract/metadata evidence cannot establish a complete technical difference; "
+                "full_text support is required for: " + ", ".join(weak_ids)
+            )
+        if candidate.gap.strip() and evidence_ids and weak_ids:
+            unsupported.append(
+                "abstract/metadata evidence cannot establish a complete novelty gap; "
+                "full_text support is required"
+            )
+        if not candidate.difference.strip():
+            unsupported.append("candidate technical difference is missing")
+
+        referenced_ids = set(candidate.closest_prior_work + candidate.novelty_evidence_ids)
         pending_source = quality.search_status in {
             "failed",
             "partial",
         } or any(
             item.verification_status == EvidenceStatus.PENDING
             for item in bundle.items
-            if item.evidence_id in candidate.novelty_evidence_ids
+            if item.evidence_id in referenced_ids
         )
-        if not prior_ids or not claim_ids or not candidate.gap.strip():
+        complete_requirements = bool(
+            prior_ids
+            and claim_ids
+            and candidate.gap.strip()
+            and candidate.difference.strip()
+            and candidate.hypothesis.strip()
+        )
+        full_text_ready = bool(referenced_items) and not weak_ids and len(referenced_items) == len(evidence_ids)
+        if not complete_requirements or pending_source or unsupported or not full_text_ready:
             status = "pending" if pending_source else "insufficient"
             gap = ""
             difference = ""
