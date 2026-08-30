@@ -1,5 +1,7 @@
 """Drafting entry gate; deliberately independent of model/reviewer services."""
 from dataclasses import dataclass
+import math
+import re
 @dataclass(frozen=True)
 class DraftingReadiness:
     status: str
@@ -26,14 +28,21 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
     if not analysis_path: missing.append("analysis_artifact_reference")
     elif execution.research_run_id not in analysis_path.replace("\\", "/").split("/"): missing.append("analysis_artifact_scope")
     elif artifact_store is not None and not _valid_artifact(artifact_store, analysis_path, execution.research_run_id, "result_analysis"): missing.append("analysis_artifact_invalid")
-    if execution_records := tuple(record for record in experiment_records if record.is_verified):
-        for record in execution_records:
+    verified_records = tuple(record for record in experiment_records if record.is_verified)
+    execution_record_ids = set(getattr(execution, "verified_record_ids", ()))
+    if execution_record_ids - {record.record_id for record in verified_records}:
+        missing.append("verified_experiment_record_missing")
+    if verified_records:
+        for record in verified_records:
+            if record.record_id not in execution_record_ids:
+                missing.append(f"verified_record_not_in_execution:{record.record_id}")
+                continue
             if not record.metric_artifact_refs:
                 missing.append("metric_artifact_refs_missing")
             if set(record.metric_artifact_refs) != set(record.metric_values):
                 missing.append("metric_artifact_refs_incomplete")
             for metric, reference in record.metric_artifact_refs.items():
-                if not isinstance(reference, str) or "#" not in reference:
+                if not isinstance(reference, str) or reference.count("#") != 1:
                     missing.append("metric_artifact_ref_format")
                     continue
                 base, pointer = reference.split("#", 1)
@@ -50,7 +59,7 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
                     missing.append(f"metric_artifact_pointer_missing:{metric}")
                     continue
                 expected = record.metric_values.get(metric)
-                if not _nonempty(actual) or type(actual) is not type(expected) or actual != expected:
+                if not _nonempty(actual) or not _json_value_equal(actual, expected):
                     missing.append(f"metric_artifact_value_mismatch:{metric}")
     if citation_registry is None:
         missing.append("citation_registry_missing")
@@ -81,20 +90,27 @@ def _valid_artifact(store, path, run_id, artifact_type):
 
 def _path_in_run(path, run_id):
     from pathlib import PurePosixPath
+    if not isinstance(path, str) or not path or re.match(r"^(?:[A-Za-z]:[\\/]|[\\/])", path):
+        return False
     p = PurePosixPath(path.replace("\\", "/"))
-    return not p.is_absolute() and ".." not in p.parts and run_id in p.parts
+    return ".." not in p.parts and run_id in p.parts
 
 def _resolve_pointer_format(pointer):
-    return isinstance(pointer, str) and pointer.startswith("/") and pointer != "/" and all(part == "" or "~" not in part.replace("~0", "").replace("~1", "") for part in pointer.split("/"))
+    if not isinstance(pointer, str) or not pointer.startswith("/"):
+        return False
+    return all(not re.search(r"~(?![01])", token) for token in pointer.split("/")[1:])
 
 def _resolve_pointer(content, pointer):
+    if not _resolve_pointer_format(pointer):
+        raise ValueError("invalid JSON pointer")
     value = content
     for token in pointer.split("/")[1:]:
-        if "~" in token and any(x not in {"~0", "~1"} for x in _tilde_parts(token)):
-            raise ValueError("invalid JSON pointer escape")
         token = token.replace("~1", "/").replace("~0", "~")
         if isinstance(value, dict): value = value[token]
-        elif isinstance(value, list): value = value[int(token)]
+        elif isinstance(value, list):
+            if token == "-" or (len(token) > 1 and token.startswith("0")) or not token.isdigit():
+                raise ValueError("invalid array index")
+            value = value[int(token)]
         else: raise TypeError("pointer target is not traversable")
     return value
 
@@ -104,3 +120,18 @@ def _tilde_parts(token):
 
 def _nonempty(value):
     return value is not None and value != "" and value != {} and value != []
+
+def _json_value_equal(actual, expected):
+    """Strict, finite JSON-compatible equality (bool is not an integer)."""
+    if isinstance(actual, float) and not math.isfinite(actual):
+        return False
+    if isinstance(expected, float) and not math.isfinite(expected):
+        return False
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(actual, dict):
+        return (set(actual) == set(expected)
+                and all(_json_value_equal(actual[key], expected[key]) for key in actual))
+    if isinstance(actual, list):
+        return len(actual) == len(expected) and all(_json_value_equal(a, e) for a, e in zip(actual, expected))
+    return actual == expected
