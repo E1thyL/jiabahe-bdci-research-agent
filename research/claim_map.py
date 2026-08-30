@@ -22,9 +22,11 @@ class ClaimLink:
 @dataclass(frozen=True)
 class ClaimMap:
     claims: tuple[ClaimLink, ...] = ()
-    def validate(self, evidence: Any, *, citations: set[str] | None = None) -> tuple[str, ...]:
+    def validate(self, evidence: Any, *, citations: set[str] | None = None, experiment_records=()) -> tuple[str, ...]:
         ids = set(evidence.ids if hasattr(evidence, "ids") and not callable(evidence.ids) else evidence.ids())
         lookup = {item.evidence_id: item for item in getattr(evidence, "items", ())}
+        experiment_lookup = {record.record_id: record for record in experiment_records if record.is_verified}
+        ids.update(experiment_lookup)
         errors=[]; seen=set(); citations = citations or set()
         for c in self.claims:
             if c.claim_id in seen: errors.append(f"duplicate claim_id: {c.claim_id}")
@@ -34,6 +36,8 @@ class ClaimMap:
             if unknown: errors.append(f"unknown evidence_id(s): {', '.join(sorted(unknown))}")
             for evidence_id in c.evidence_ids:
                 item = lookup.get(evidence_id)
+                if item is None and evidence_id in experiment_lookup:
+                    continue
                 if item is not None and not item.support_level.supports(c.minimum_support_level):
                     errors.append(f"insufficient support level for claim: {c.claim_id}")
                 if c.claim_type == "technical_difference" and item is not None and item.support_level.value in {"metadata", "abstract"}:

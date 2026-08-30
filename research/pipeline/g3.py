@@ -7,7 +7,7 @@ class DraftingReadiness:
     @property
     def ready(self): return self.status == "ready"
 
-def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evidence, usage_records=()):
+def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evidence, usage_records=(), experiment_records=()):
     missing=[]
     decision = getattr(value_gate, "decision", None)
     if decision is None or getattr(decision, "value", decision) == "no_go": missing.append("value_gate")
@@ -16,7 +16,7 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
     if not getattr(execution, "artifact_path", ""): missing.append("experiment_artifact_reference")
     if analysis.status != "ready": missing.append("result_analysis")
     if not getattr(analysis, "artifact_path", ""): missing.append("analysis_artifact_reference")
-    errors=claim_map.validate(evidence)
+    errors=claim_map.validate(evidence, experiment_records=experiment_records)
     if errors: missing.append("claim_map")
     if not usage_records: missing.append("usage")
     elif any(getattr(record, "research_run_id", None) != execution.research_run_id for record in usage_records):
