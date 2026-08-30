@@ -22,7 +22,14 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
     elif execution.research_run_id not in analysis_path.replace("\\", "/").split("/"): missing.append("analysis_artifact_scope")
     if citation_registry is None:
         missing.append("citation_registry_missing")
-    errors=claim_map.validate(evidence, experiment_records=experiment_records, citations=set(citation_registry or ()))
+        registry_values = set()
+    elif isinstance(citation_registry, dict):
+        if citation_registry.get("research_run_id") != execution.research_run_id:
+            missing.append("citation_registry_run_id")
+        registry_values = set(citation_registry.get("citations", ()))
+    else:
+        registry_values = set(citation_registry)
+    errors=claim_map.validate(evidence, experiment_records=experiment_records, citations=registry_values)
     if errors: missing.append("claim_map")
     claim_ids = {claim.claim_id for claim in claim_map.claims}
     claim_types = {claim.claim_type for claim in claim_map.claims}
