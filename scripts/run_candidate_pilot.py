@@ -22,6 +22,7 @@ from research.literature import OpenAlexLiteratureSource, ReplayLiteratureSource
 from research.literature.router import LiteratureRouter  # noqa: E402
 from research.model.deepseek import DeepSeekV4FlashClient  # noqa: E402
 from research.runtime_config import ResearchRuntimeConfig  # noqa: E402
+from research.usage import UsageSink  # noqa: E402
 from research.value_gate.schema import CandidateProblem  # noqa: E402
 from research.value_gate.gate import ResearchValueGate  # noqa: E402
 
@@ -79,11 +80,18 @@ def parse_candidate(topic: str, value: str) -> CandidateProblem:
 
 
 def run_pilot(*, run_id: str, max_candidates: int, client: Any, router: LiteratureRouter,
-              artifact_dir: Path, secret: str, write_artifact: bool = True) -> dict[str, Any]:
+              artifact_dir: Path, secret: str, usage_sink: UsageSink | None = None,
+              write_artifact: bool = True) -> dict[str, Any]:
     results = []
     for topic in bounded_topics(max_candidates):
-        candidate = parse_candidate(topic, client.generate(candidate_prompt(topic)))
-        search = router.search(candidate, {"query": candidate.problem_statement})
+        candidate = parse_candidate(topic, _generate_candidate(client, candidate_prompt(topic)))
+        search = router.search(
+            candidate,
+            {"query": candidate.problem_statement},
+            usage_sink=usage_sink,
+            research_run_id=run_id,
+            artifact_path=f"artifacts/{run_id}/literature.json",
+        )
         bundle = search.to_evidence_bundle()
         evidence_ids = tuple(sorted(bundle.ids()))
         candidate = replace(candidate, significance_evidence_ids=evidence_ids,
@@ -103,8 +111,10 @@ def run_pilot(*, run_id: str, max_candidates: int, client: Any, router: Literatu
                         "closest_prior_work_ids": list(novelty.closest_prior_work_ids),
                         "supported_gap": novelty.supported_gap, "candidate_difference": novelty.candidate_difference,
                         "baseline_plan": list(candidate.baselines), "metric_plan": list(candidate.metrics)})
+    usage = tuple(getattr(usage_sink, "records", ()))
     report = {"research_run_id": run_id, "candidate_count": len(results), "method_design": False,
-              "drafting": False, "stanford_reviewer": False, "candidates": results}
+              "drafting": False, "stanford_reviewer": False, "usage": [record.to_dict() for record in usage],
+              "candidates": results}
     if write_artifact:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         (artifact_dir / "candidate_pilot.json").write_text(json.dumps(_safe(report, secret), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -121,6 +131,52 @@ def _safe(value: Any, secret: str) -> Any:
     return value
 
 
+class _UsageCollector:
+    def __init__(self) -> None:
+        self.records = []
+
+    def record(self, record: Any) -> None:
+        self.records.append(record)
+
+
+def _generate_candidate(client: Any, prompt: str) -> str:
+    """Use explicit ideation phase while tolerating legacy test clients."""
+    try:
+        import inspect
+        signature = inspect.signature(client.generate)
+        accepts_kwargs = any(parameter.kind == inspect.Parameter.VAR_KEYWORD
+                             for parameter in signature.parameters.values())
+        if accepts_kwargs or "_usage_phase" in signature.parameters:
+            return client.generate(prompt, _usage_phase="ideation")
+    except (TypeError, ValueError):
+        return client.generate(prompt, _usage_phase="ideation")
+    return client.generate(prompt)
+
+
+def _make_client(factory: Callable[..., Any], config: dict[str, str], *, usage_sink: UsageSink,
+                 run_id: str, artifact_path: str) -> Any:
+    kwargs = {
+        "endpoint": config["DEEPSEEK_API_ENDPOINT"],
+        "api_key": config["DEEPSEEK_API_KEY"],
+        "model": config["DEEPSEEK_MODEL"],
+        "usage_sink": usage_sink,
+        "research_run_id": run_id,
+        "artifact_path": artifact_path,
+    }
+    try:
+        import inspect
+        signature = inspect.signature(factory)
+        accepts_kwargs = any(parameter.kind == inspect.Parameter.VAR_KEYWORD
+                             for parameter in signature.parameters.values())
+        if accepts_kwargs or all(name in signature.parameters for name in kwargs):
+            return factory(**kwargs)
+    except (TypeError, ValueError):
+        pass
+    # Preserve factories that predate usage wiring while keeping the default
+    # client fully instrumented above.
+    return factory(endpoint=kwargs["endpoint"], api_key=kwargs["api_key"], model=kwargs["model"])
+
+
 def main(argv: list[str] | None = None, *, environ: dict[str, str] | None = None,
          client_factory: Callable[..., Any] = DeepSeekV4FlashClient) -> int:
     parser = argparse.ArgumentParser()
@@ -135,12 +191,16 @@ def main(argv: list[str] | None = None, *, environ: dict[str, str] | None = None
             print(json.dumps({"status": "ready", "mode": "dry-run", "model": config["DEEPSEEK_MODEL"], "candidate_limit": len(topics), "network_calls": 0}))
             return 0
         runtime = ResearchRuntimeConfig.from_env(environ)
-        client = client_factory(endpoint=config["DEEPSEEK_API_ENDPOINT"], api_key=config["DEEPSEEK_API_KEY"], model=config["DEEPSEEK_MODEL"])
+        usage_sink = _UsageCollector()
+        artifact_path = f"artifacts/{args.run_id}/candidate_pilot.json"
+        client = _make_client(client_factory, config, usage_sink=usage_sink,
+                              run_id=args.run_id, artifact_path=artifact_path)
         online = OpenAlexLiteratureSource(cache_dir=ROOT / ".pilot-cache", research_run_id=args.run_id, max_pages=1, max_retries=1)
         offline = ReplayLiteratureSource({})
         report = run_pilot(run_id=args.run_id, max_candidates=len(topics), client=client,
                            router=LiteratureRouter(runtime, offline=offline, online=online),
-                           artifact_dir=ROOT / ".pilot-cache" / args.run_id, secret=config["DEEPSEEK_API_KEY"])
+                           artifact_dir=ROOT / ".pilot-cache" / args.run_id, secret=config["DEEPSEEK_API_KEY"],
+                           usage_sink=usage_sink)
         print(json.dumps({"status": "completed", "research_run_id": report["research_run_id"], "candidate_count": report["candidate_count"]}))
         return 0
     except Exception as exc:

@@ -57,16 +57,27 @@ class DeepSeekV4FlashClient:
                 if attempt == self.max_retries:
                     break
                 self._sleep(0.1 * (2 ** attempt))
+        self._record_failed_usage(int((time.monotonic() - started) * 1000), attempt, usage_phase)
         raise RuntimeError(f"DeepSeek request failed: {last_error}") from last_error
 
     def _record_usage(self, response: DeepSeekResponse, wall_time_ms: int, retries: int, phase: str) -> None:
         if self._usage_sink is None or not self._run_id:
             return
         values = {"input_tokens": response.input_tokens, "output_tokens": response.output_tokens,
-                  "tool_calls": 0, "retry_count": retries, "wall_time_ms": wall_time_ms, "reviewer_calls": 0}
+                  "tool_calls": 0, "retry_count": retries, "wall_time_ms": wall_time_ms,
+                  "reviewer_calls": 0, "request_count": retries + 1}
         status = MeasurementStatus.OBSERVED if response.input_tokens is not None and response.output_tokens is not None else MeasurementStatus.ESTIMATED
         self._usage_sink.record(make_phase_usage_record(phase=phase, research_run_id=self._run_id,
             artifact_path=self._artifact_path, model=self.model, measurement_status=status, **values))
+
+    def _record_failed_usage(self, wall_time_ms: int, retries: int, phase: str) -> None:
+        if self._usage_sink is None or not self._run_id:
+            return
+        self._usage_sink.record(make_phase_usage_record(
+            phase=phase, research_run_id=self._run_id, artifact_path=self._artifact_path,
+            model=self.model, measurement_status="pending", retry_count=retries,
+            wall_time_ms=wall_time_ms, request_count=retries + 1,
+        ))
 
 
 def _request(endpoint: str, headers: dict[str, str], body: bytes, timeout: float) -> bytes:

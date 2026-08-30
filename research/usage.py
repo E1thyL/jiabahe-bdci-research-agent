@@ -65,6 +65,7 @@ class ResearchUsageRecord:
     reviewer_calls: int | None = None
     artifact_path: str = ""
     measurement_status: MeasurementStatus | str = MeasurementStatus.OBSERVED
+    request_count: int | None = None
 
     def __post_init__(self) -> None:
         if not self.record_id.strip():
@@ -104,6 +105,8 @@ class ResearchUsageRecord:
                 "non-pending measurements require resource fields: "
                 + ", ".join(missing)
             )
+        if self.request_count is not None and (isinstance(self.request_count, bool) or self.request_count < 0):
+            raise ValueError("request_count cannot be negative")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -112,6 +115,7 @@ class ResearchUsageRecord:
             "phase": self.phase.value,
             "model": self.model,
             **{name: getattr(self, name) for name in _RESOURCE_FIELDS},
+            "request_count": self.request_count,
             "artifact_path": self.artifact_path,
             "measurement_status": self.measurement_status.value,
         }
@@ -148,6 +152,7 @@ def make_phase_usage_record(
         model=model,
         artifact_path=path,
         measurement_status=measurement_status,
+        request_count=measurements.get("request_count"),
         **{name: measurements.get(name) for name in _RESOURCE_FIELDS},
     )
 

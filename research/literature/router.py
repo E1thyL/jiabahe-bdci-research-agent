@@ -39,19 +39,34 @@ class LiteratureRouter:
     ) -> LiteratureSearchResult:
         mode = self.config.literature_mode
         if mode == LiteratureMode.OFFLINE:
-            return self.offline.search(candidate, topic_config)
+            result = self.offline.search(candidate, topic_config)
+            if usage_sink is not None and research_run_id:
+                self._emit_usage(usage_sink, research_run_id, artifact_path, None)
+            return result
         if self.online is None:
             if mode == LiteratureMode.ONLINE_ALLOWLIST:
-                return LiteratureSearchResult(candidate.problem_statement, "", "router", status=LiteratureSearchStatus.FAILED, failure_reason="no allowlisted online adapter configured")
-            return self.offline.search(candidate, topic_config)
+                result = LiteratureSearchResult(candidate.problem_statement, "", "router", status=LiteratureSearchStatus.FAILED, failure_reason="no allowlisted online adapter configured")
+            else:
+                result = self.offline.search(candidate, topic_config)
+            if usage_sink is not None and research_run_id:
+                self._emit_usage(usage_sink, research_run_id, artifact_path, None)
+            return result
         try:
             result = self.online.search(candidate, topic_config)
         except Exception as exc:
             if mode == LiteratureMode.ONLINE_ALLOWLIST:
-                return LiteratureSearchResult(candidate.problem_statement, "", "router", status=LiteratureSearchStatus.FAILED, failure_reason=str(exc))
-            result = self.offline.search(candidate, topic_config)
+                result = LiteratureSearchResult(candidate.problem_statement, "", "router", status=LiteratureSearchStatus.FAILED, failure_reason=str(exc))
+            else:
+                result = self.offline.search(candidate, topic_config)
         if usage_sink is not None and research_run_id:
-            self._emit_usage(usage_sink, research_run_id, artifact_path, usage_measurement)
+            measured = getattr(self.online, "usage_measurement", None)
+            if callable(measured):
+                measured = measured()
+            if measured is None:
+                measured = usage_measurement
+            elif usage_measurement:
+                measured = {**measured, **usage_measurement}
+            self._emit_usage(usage_sink, research_run_id, artifact_path, measured)
         if mode == LiteratureMode.AUTO and result.status == LiteratureSearchStatus.FAILED:
             return self.offline.search(candidate, topic_config)
         return result

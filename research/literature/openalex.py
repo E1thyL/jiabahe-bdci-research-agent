@@ -29,6 +29,7 @@ class OpenAlexLiteratureSource:
     """Search OpenAlex with bounded pagination, retries, and raw snapshots."""
 
     API_URL = "https://api.openalex.org/works"
+    source_name = "openalex"
 
     def __init__(
         self,
@@ -52,12 +53,28 @@ class OpenAlexLiteratureSource:
         self.max_retries = max_retries
         self._request = request_fn or _request_openalex
         self._sleep = sleep_fn
+        self._usage_request_count = 0
+        self._usage_retry_count = 0
+        self._usage_started = 0.0
+
+    @property
+    def usage_measurement(self) -> dict[str, int]:
+        """Return transport measurements without exposing response contents."""
+        elapsed = int((time.monotonic() - self._usage_started) * 1000) if self._usage_started else 0
+        return {
+            "request_count": self._usage_request_count,
+            "retry_count": self._usage_retry_count,
+            "wall_time_ms": elapsed,
+        }
 
     def search(
         self,
         candidate: CandidateProblem,
         topic_config: dict[str, Any] | None = None,
     ) -> LiteratureSearchResult:
+        self._usage_started = time.monotonic()
+        self._usage_request_count = 0
+        self._usage_retry_count = 0
         config = topic_config or {}
         query = str(config.get("query") or candidate.problem_statement).strip()
         if not query:
@@ -114,6 +131,7 @@ class OpenAlexLiteratureSource:
 
     def _request_with_retries(self, url: str) -> tuple[int, bytes, str | None]:
         for attempt in range(self.max_retries + 1):
+            self._usage_request_count += 1
             try:
                 status, body = self._request(url, self.timeout)
                 if status == 200:
@@ -125,6 +143,7 @@ class OpenAlexLiteratureSource:
                 retryable = True
             if not retryable or attempt == self.max_retries:
                 return 0, b"", failure
+            self._usage_retry_count += 1
             self._sleep(0.1 * (2**attempt))
         return 0, b"", "OpenAlex retry limit exhausted"
 
