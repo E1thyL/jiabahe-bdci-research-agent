@@ -110,6 +110,10 @@ class ResultAnalysisStage:
                     "artifact_path": record.artifact_path,
                     "effect_size": None,
                     "confidence_interval": None,
+                    "uncertainties": (["single_run_no_sampling_uncertainty"]
+                                      if record.run_count == 1 else []),
+                    "limitations": (["effect_size_not_computable_without_paired_baseline"]
+                                    if record.baseline_id else []),
                 }
             status, reason = "ready", "descriptive analysis generated"
         artifact = ResultAnalysisArtifact(
