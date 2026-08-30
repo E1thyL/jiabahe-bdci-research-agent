@@ -149,6 +149,44 @@ def test_openalex_empty_result_is_not_no_go(tmp_path) -> None:
     assert result.to_evidence_bundle().items == ()
 
 
+def test_openalex_artifact_reference_is_relative_when_cache_is_relative(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    source = OpenAlexLiteratureSource(
+        cache_dir=".pilot-cache", research_run_id="research-001", max_retries=0,
+        timeout=2.0, request_fn=_transport({"results": []}),
+    )
+    result = source.search(_candidate(), {"query": "relative artifact"})
+    assert result.artifact_path.startswith(".pilot-cache/research-001/openalex-")
+    assert not result.artifact_path.endswith("literature.json")
+    assert (tmp_path / result.artifact_path).exists()
+    assert source.usage_measurement["request_count"] == 1
+
+
+def test_openalex_cache_hit_keeps_same_traceable_artifact_reference(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    calls: list[str] = []
+    source = OpenAlexLiteratureSource(
+        cache_dir=".pilot-cache", research_run_id="research-001", timeout=2.0, max_retries=0,
+        request_fn=_transport({"results": []}, calls),
+    )
+    first = source.search(_candidate(), {"query": "cache trace"})
+    second = source.search(_candidate(), {"query": "cache trace"})
+    assert first.artifact_path == second.artifact_path
+    assert len(calls) == 1
+    assert source.usage_measurement["request_count"] == 0
+
+
+def test_openalex_failed_response_writes_traceable_failure_artifact(tmp_path) -> None:
+    source = _source(tmp_path, _transport({"error": "unavailable"}, status=503), max_retries=0)
+    result = source.search(_candidate(), {"query": "failed artifact"})
+    assert result.status == LiteratureSearchStatus.FAILED
+    assert result.artifact_path
+    assert json.loads((tmp_path / "cache" / "research-001" / result.artifact_path.rsplit("/", 1)[-1]).read_text())[
+        "status"
+    ] == "failed"
+    assert source.usage_measurement["request_count"] == 1
+
+
 def test_openalex_adapter_feeds_evidence_collector(tmp_path) -> None:
     source = _source(tmp_path, _transport({"results": [_work()]}))
     bundle = AdapterEvidenceCollector(source).collect(_candidate())

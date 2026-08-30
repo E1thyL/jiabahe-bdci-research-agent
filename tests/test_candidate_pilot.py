@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -100,17 +101,18 @@ def test_key_is_not_in_report_or_error(capsys, tmp_path):
     assert "test-secret" not in capsys.readouterr().err
 
 
-def test_pilot_wires_ideation_and_literature_usage_to_one_sink(tmp_path):
+def test_pilot_wires_ideation_and_literature_usage_to_one_sink(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     from scripts.run_candidate_pilot import _UsageCollector
     sink = _UsageCollector()
     client = UsageClient(usage_sink=sink, research_run_id="run-wire", artifact_path="artifacts/run-wire/candidate.json")
     online = OpenAlexLiteratureSource(
-        cache_dir=tmp_path, research_run_id="run-wire", max_pages=1, max_retries=0,
+        cache_dir=Path(".pilot-cache"), research_run_id="run-wire", max_pages=1, max_retries=0,
         request_fn=lambda _url, _timeout: (200, b'{"results": []}'),
     )
     router = LiteratureRouter(ResearchRuntimeConfig("online_allowlist"), offline=ReplayLiteratureSource({}), online=online)
     report = run_pilot(run_id="run-wire", max_candidates=1, client=client, router=router,
-                       artifact_dir=tmp_path, secret="test-secret", usage_sink=sink, write_artifact=False)
+                       artifact_dir=Path(".pilot-cache") / "run-wire", secret="test-secret", usage_sink=sink, write_artifact=False)
     assert client.phases == ["ideation"]
     assert {record.phase.value for record in sink.records} == {"ideation", "literature"}
     assert all(record.research_run_id == "run-wire" for record in sink.records)
@@ -119,6 +121,9 @@ def test_pilot_wires_ideation_and_literature_usage_to_one_sink(tmp_path):
     assert literature.measurement_status.value == "estimated"
     assert literature.wall_time_ms is not None
     assert literature.request_count == 1
+    assert literature.artifact_path.startswith(".pilot-cache/run-wire/openalex-")
+    assert Path(literature.artifact_path).exists()
+    assert not literature.artifact_path.endswith("literature.json")
 
 
 def test_candidate_schema_contains_required_fields():

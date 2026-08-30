@@ -157,6 +157,30 @@ def test_aggregate_usage_preserves_phase_totals() -> None:
     assert result["by_phase"]["drafting"]["total_input_tokens"] == 0
 
 
+def test_aggregate_usage_counts_requests_by_phase_and_preserves_unknown() -> None:
+    records = (
+        _record(request_count=1),
+        _record(record_id="usage-002", phase="literature", request_count=2,
+                artifact_path="artifacts/research-001/literature.json"),
+        _record(record_id="usage-003", phase="drafting", request_count=None,
+                input_tokens=None, output_tokens=None, tool_calls=None,
+                retry_count=None, wall_time_ms=None, reviewer_calls=None,
+                measurement_status="pending", artifact_path="artifacts/research-001/drafting.json"),
+    )
+    result = aggregate_usage(records)
+    assert result["total_request_count"] == 3
+    assert result["by_phase"]["value_gate"]["total_request_count"] == 1
+    assert result["by_phase"]["literature"]["total_request_count"] == 2
+    assert result["by_phase"]["drafting"]["total_request_count"] is None
+
+
+def test_aggregate_usage_keeps_zero_and_all_unknown_distinct() -> None:
+    zero = _record(request_count=0)
+    unknown = _record(record_id="usage-unknown", request_count=None)
+    assert aggregate_usage((zero,))["total_request_count"] == 0
+    assert aggregate_usage((unknown,))["total_request_count"] is None
+
+
 def _candidate() -> CandidateProblem:
     return CandidateProblem(
         problem_statement="A measurable research problem",
