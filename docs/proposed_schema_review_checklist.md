@@ -14,6 +14,11 @@ Code facts cited below are read from `main` at `991b2e5`:
 `research/value_gate/gate.py`, and `research/usage.py`. Re-verify against the working
 tree before implementing, because the checklist ages as the code changes.
 
+The facts below are the pre-implementation baseline. After an item lands, its
+status must be updated from "current gap" to "implemented" in the active design
+documentation; do not use the historical baseline statements as a description of
+the latest branch.
+
 ## How to read each item
 
 Every item is stated on seven axes:

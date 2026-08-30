@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..experiment import ExperimentEvidenceRecord
 from .evidence import EvidenceIndex
 from ..usage import ResearchUsageRecord, UsageSink, emit_usage, make_phase_usage_record
 from .policies import topic_policy
@@ -34,9 +35,10 @@ class ResearchValueGate:
         research_run_id: str | None = None,
         artifact_path: str | None = None,
         model: str = "",
+        experiment_records: tuple[ExperimentEvidenceRecord, ...] = (),
     ) -> ValueGateDecision:
         topic_policy(candidate.topic)
-        index = EvidenceIndex(evidence)
+        index = EvidenceIndex(evidence, experiment_records=experiment_records)
         objections: list[str] = []
 
         referenced_ids = set(

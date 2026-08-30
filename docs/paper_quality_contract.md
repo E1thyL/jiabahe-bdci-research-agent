@@ -27,24 +27,29 @@ Existing and reused verbatim from the code:
   `evidence_status` is proposed for later stage outputs (section 12).
 - `EvidenceItem.evidence_type` is restricted to `prior_work`, `limitation`,
   `dataset`, `baseline`, `metric`. Its `kind` view collapses `prior_work` and
-  `limitation` to `literature`. There is no `experiment` type, so
-  `EvidenceIndex.verified_experiment_ids()` returns empty and `experiment.status`
-  stays `pending` under the current schema.
+  `limitation` to `literature`. There is no `experiment` type; experiment results
+  use the separate `ExperimentEvidenceRecord` index. With no records,
+  `EvidenceIndex.verified_experiment_ids()` is empty and `experiment.status` stays
+  `pending`; verified parallel records can now populate that status.
 - `MeasurementStatus`: `observed`, `estimated`, `pending`.
-- `ScientificSupportLevel`: `metadata`, `abstract`, `full_text`, `experiment` is
-  implemented on `EvidenceItem` as a conservative evidence annotation. Legacy
-  `EvidenceItem` construction defaults to `metadata`; `LiteratureRecord` propagates
-  an explicit level to the materialized item. Claim-level validation and experiment
-  records remain proposed.
+- `ScientificSupportLevel`: the enum and evidence-level annotation are implemented.
+  `EvidenceItem` accepts `metadata`, `abstract`, and `full_text`; `experiment` is
+  reserved for `ExperimentEvidenceRecord`. Legacy `EvidenceItem` construction
+  defaults to `metadata`; `LiteratureRecord` propagates an explicit level to the
+  materialized item. Claim-level validation and experiment execution integration
+  remain proposed.
 - `ValueGateDecision`, whose evidence state is exposed only as `literature.status`
   and `experiment.status` (each an `EvidenceStatus`); `ResearchUsageRecord`,
   `aggregate_usage`, and the `topic` policies (`required_baselines`,
   `required_metrics`).
+- `ExperimentEvidenceRecord` is implemented as a separate structural record with a
+  parallel evidence index. Actual experiment execution and drafting-gate integration
+  remain proposed.
 
 Proposed by this contract and not yet implemented (collected in section 12):
 
 - Claim-level `ScientificSupportLevel` validation and claim/evidence compatibility.
-- An `ExperimentEvidenceRecord` to carry experiment provenance.
+- Experiment execution and drafting-gate integration for `ExperimentEvidenceRecord`.
 - Two additional phases, `experiment_execution` and `result_analysis`.
 - A unified `evidence_status` for stage outputs.
 - Feasibility `access` and `license` evidence and executability checks.
@@ -77,8 +82,8 @@ current levels are:
   NoveltyGapBuilder rule).
 - `full_text`: can support a technical-difference claim about prior work.
 - `experiment`: reserved for a reproducible experiment record produced by this
-  project; the current `EvidenceItem` schema rejects this level and uses the
-  proposed `ExperimentEvidenceRecord` instead.
+  project; the current `EvidenceItem` schema rejects this level and the implemented
+  parallel `ExperimentEvidenceRecord` carries it instead.
 
 When claim validation is implemented, a claim may not exceed the support level of
 the evidence behind it. A `verified` metadata item does not license a full-text
@@ -156,9 +161,10 @@ artifact.
   every task; it is used where the metric and design warrant it.
 
 `experiment_execution` runs the plan and produces experiment evidence. Only a
-`verified` `ExperimentEvidenceRecord` (proposed, section 12) may move
-`experiment.status` from `pending` to `verified`. Under the current schema no
-experiment evidence can exist, so this phase cannot yet be satisfied.
+`verified` `ExperimentEvidenceRecord` may move
+`experiment.status` from `pending` to `verified`. The record schema and parallel
+index now exist, but the current runner has no experiment execution phase that
+produces records automatically, so execution integration remains proposed.
 
 Reproducibility is stated as three distinct levels, because a fully offline rerun is
 not achievable for model-dependent experiments:
@@ -226,7 +232,7 @@ Every claim in the paper binds to evidence and declares its support level (secti
   `verification_status = verified`, referenced by `evidence_id`, carrying `source_uri`
   and a non-empty `source_hash`. A technical-difference claim requires `full_text`
   support; `metadata` or `abstract` support cannot carry it.
-- Empirical claims bind to a `verified` `ExperimentEvidenceRecord` (proposed) under
+- Empirical claims bind to a `verified` `ExperimentEvidenceRecord` under
   the same `research_run_id`, at `experiment` support level.
 - Novelty claims bind to `closest_prior_work` plus an explicit `gap` and `difference`;
   a missing or `pending` prior work yields an `insufficient` or `pending` gap, never a
@@ -330,18 +336,17 @@ follows the official written answer; until then, the default path is offline.
 
 ## 12. Proposed schema extensions
 
-These are proposed by this contract and are not implemented. They are the work items a
-later implementation step must land; naming and shape are indicative.
+These are the remaining proposed extensions. The structural
+`ExperimentEvidenceRecord` and its parallel index are implemented, but their
+execution and drafting-gate integration are not.
 
 - Claim-level `ScientificSupportLevel` validation and claim/evidence compatibility.
   Evidence-level support annotations are implemented; claim-level enforcement is
   still proposed (section 1).
-- `ExperimentEvidenceRecord`: the current `EvidenceItem.evidence_type` has no
-  `experiment` value and `kind` never resolves to `experiment`, so
-  `verified_experiment_ids()` is always empty and `experiment.status` is always
-  `pending`. A separate record must carry experiment provenance: `research_run_id`,
-  method and baseline identifiers, config, seed, metric values, dispersion, and the
-  statistical outcome, with its own `verification_status`.
+- Experiment execution and drafting-gate integration: `EvidenceItem.evidence_type`
+  still has no `experiment` value, so experiment results use the implemented
+  parallel `ExperimentEvidenceRecord` index. The runner must later connect verified
+  records to result analysis and drafting coverage.
 - Two phases in `ResearchPhase`: `experiment_execution` and `result_analysis`. Without
   them, real experiment cost and result quality are hidden inside `experiment_design`.
 - A unified `evidence_status` for stage outputs. Today evidence state is exposed only

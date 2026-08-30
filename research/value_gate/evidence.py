@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
+from ..experiment import ExperimentEvidenceRecord
 from ..usage import (
     ResearchUsageRecord,
     UsageSink,
@@ -99,12 +100,23 @@ class AdapterEvidenceCollector:
 class EvidenceIndex:
     """Resolve evidence IDs without performing search or network I/O."""
 
-    def __init__(self, bundle: EvidenceBundle | tuple[EvidenceItem, ...] = ()) -> None:
+    def __init__(
+        self,
+        bundle: EvidenceBundle | tuple[EvidenceItem, ...] = (),
+        *,
+        experiment_records: tuple[ExperimentEvidenceRecord, ...] = (),
+    ) -> None:
         if isinstance(bundle, EvidenceBundle):
             items = bundle.items
         else:
             items = EvidenceBundle(bundle).items
         self._items = {item.evidence_id: item for item in items}
+        experiment_ids = [record.record_id for record in experiment_records]
+        if len(experiment_ids) != len(set(experiment_ids)):
+            raise ValueError("experiment record_id values must be unique")
+        self._experiment_records = {
+            record.record_id: record for record in experiment_records
+        }
 
     def get(self, evidence_ids: tuple[str, ...]) -> tuple[EvidenceItem, ...]:
         return tuple(
@@ -126,7 +138,7 @@ class EvidenceIndex:
 
     def verified_experiment_ids(self) -> tuple[str, ...]:
         return tuple(
-            item.evidence_id
-            for item in self._items.values()
-            if item.kind == "experiment" and item.status == EvidenceStatus.VERIFIED
+            record.record_id
+            for record in self._experiment_records.values()
+            if record.is_verified
         )

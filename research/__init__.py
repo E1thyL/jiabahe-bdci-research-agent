@@ -1,5 +1,9 @@
 """Business-layer research pipeline components."""
 
+from .experiment import (
+    ExperimentEvidenceRecord,
+    ExperimentExecutionStatus,
+)
 from .usage import (
     MeasurementStatus,
     ResearchPhase,
@@ -11,6 +15,8 @@ from .usage import (
 )
 
 __all__ = [
+    "ExperimentEvidenceRecord",
+    "ExperimentExecutionStatus",
     "MeasurementStatus",
     "ResearchPhase",
     "ResearchUsageRecord",
