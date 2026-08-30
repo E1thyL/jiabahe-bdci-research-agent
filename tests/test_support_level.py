@@ -36,6 +36,22 @@ def test_support_levels_are_ordered_and_normalized() -> None:
     assert not ScientificSupportLevel.ABSTRACT.supports("full_text")
 
 
+@pytest.mark.parametrize("left_index", range(4))
+@pytest.mark.parametrize("right_index", range(4))
+def test_support_comparisons_match_declared_order(
+    left_index: int, right_index: int
+) -> None:
+    levels = tuple(ScientificSupportLevel)
+    left = levels[left_index]
+    right = levels[right_index]
+
+    assert left.supports(right) is (left_index >= right_index)
+    assert (left < right) is (left_index < right_index)
+    assert (left <= right) is (left_index <= right_index)
+    assert (left > right) is (left_index > right_index)
+    assert (left >= right) is (left_index >= right_index)
+
+
 def test_legacy_evidence_defaults_to_conservative_metadata_support() -> None:
     item = _item()
 

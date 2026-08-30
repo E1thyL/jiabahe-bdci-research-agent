@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 import json
-from functools import total_ordering
 from typing import Any
 
 
@@ -21,7 +20,6 @@ class GateDecision(StrEnum):
     NO_GO = "no_go"
 
 
-@total_ordering
 class ScientificSupportLevel(StrEnum):
     """Strength of the scientific support carried by an evidence item.
 
@@ -41,15 +39,39 @@ class ScientificSupportLevel(StrEnum):
         )
 
     def __lt__(self, other: object) -> bool:
+        other_rank = self._other_rank(other)
+        if other_rank is NotImplemented:
+            return NotImplemented
+        return self.rank < other_rank
+
+    def __le__(self, other: object) -> bool:
+        other_rank = self._other_rank(other)
+        if other_rank is NotImplemented:
+            return NotImplemented
+        return self.rank <= other_rank
+
+    def __gt__(self, other: object) -> bool:
+        other_rank = self._other_rank(other)
+        if other_rank is NotImplemented:
+            return NotImplemented
+        return self.rank > other_rank
+
+    def __ge__(self, other: object) -> bool:
+        other_rank = self._other_rank(other)
+        if other_rank is NotImplemented:
+            return NotImplemented
+        return self.rank >= other_rank
+
+    def _other_rank(self, other: object) -> int | object:
         if isinstance(other, str):
             other = type(self)(other)
         if not isinstance(other, type(self)):
             return NotImplemented
-        return self.rank < other.rank
+        return other.rank
 
     def supports(self, required: "ScientificSupportLevel | str") -> bool:
         """Return whether this level is at least as strong as *required*."""
-        return self >= type(self)(required)
+        return self.rank >= type(self)(required).rank
 
 
 @dataclass(frozen=True)
