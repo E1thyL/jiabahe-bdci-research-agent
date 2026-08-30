@@ -54,6 +54,8 @@ class ExperimentExecutionStage:
         *,
         usage_sink: UsageSink | None = None,
     ) -> ExperimentExecutionArtifact:
+        if not research_run_id.strip():
+            raise ValueError("research_run_id must not be empty")
         records = tuple(records)
         if any(record.research_run_id != research_run_id for record in records):
             raise ValueError("experiment records must match research_run_id")
@@ -80,9 +82,12 @@ class ResultAnalysisStage:
         *,
         usage_sink: UsageSink | None = None,
     ) -> ResultAnalysisArtifact:
+        if not research_run_id.strip():
+            raise ValueError("research_run_id must not be empty")
         if execution.research_run_id != research_run_id:
             raise ValueError("execution artifact must match research_run_id")
-        status = "ready" if execution.verified_record_ids else "pending"
+        # This phase only establishes an input boundary; no analysis is run yet.
+        status = "pending"
         artifact = ResultAnalysisArtifact(
             research_run_id, status, execution.verified_record_ids,
             f"artifacts/{research_run_id}/result_analysis.json",

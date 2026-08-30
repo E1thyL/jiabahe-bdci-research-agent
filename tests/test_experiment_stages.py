@@ -31,10 +31,20 @@ def test_verified_records_are_preserved_for_analysis():
     analysis = ResultAnalysisStage().run("run-1", execution)
     assert execution.status == "verified"
     assert execution.verified_record_ids == ("exp-1",)
-    assert analysis.status == "ready"
+    assert analysis.status == "pending"
     assert analysis.experiment_record_ids == ("exp-1",)
 
 
 def test_cross_run_records_are_rejected():
     with pytest.raises(ValueError, match="match research_run_id"):
         ExperimentExecutionStage().run("run-2", (verified_record("run-1"),))
+
+
+@pytest.mark.parametrize("stage", ["execution", "analysis"])
+def test_empty_research_run_id_is_rejected(stage):
+    with pytest.raises(ValueError, match="research_run_id must not be empty"):
+        if stage == "execution":
+            ExperimentExecutionStage().run(" ")
+        else:
+            execution = ExperimentExecutionStage().run("run-1")
+            ResultAnalysisStage().run(" ", execution)
