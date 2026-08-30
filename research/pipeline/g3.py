@@ -13,8 +13,14 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
     if decision is None or getattr(decision, "value", decision) == "no_go": missing.append("value_gate")
     if not execution.verified_record_ids: missing.append("verified_experiment")
     if execution.status != "verified": missing.append("complete_experiment_artifact")
+    if not getattr(execution, "artifact_path", ""): missing.append("experiment_artifact_reference")
     if analysis.status != "ready": missing.append("result_analysis")
+    if not getattr(analysis, "artifact_path", ""): missing.append("analysis_artifact_reference")
     errors=claim_map.validate(evidence)
     if errors: missing.append("claim_map")
     if not usage_records: missing.append("usage")
+    elif any(getattr(record, "research_run_id", None) != execution.research_run_id for record in usage_records):
+        missing.append("usage_run_id")
+    elif any(getattr(record, "measurement_status", None) is None for record in usage_records):
+        missing.append("usage_measurement_status")
     return DraftingReadiness("ready" if not missing else "blocked", tuple(dict.fromkeys(missing)))
