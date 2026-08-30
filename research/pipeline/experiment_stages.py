@@ -101,7 +101,16 @@ class ResultAnalysisStage:
             # Conservative descriptive analysis.  No significance claim is made.
             analyses = {}
             for record in records:
-                analyses[record.record_id] = {"status": "supported", "metrics": record.metric_values}
+                analyses[record.record_id] = {
+                    "status": "supported" if record.metric_values else "inconclusive",
+                    "analysis_method": record.analysis_method or "descriptive",
+                    "metrics": record.metric_values,
+                    "dispersion": record.dispersion,
+                    "run_count": record.run_count,
+                    "artifact_path": record.artifact_path,
+                    "effect_size": None,
+                    "confidence_interval": None,
+                }
             status, reason = "ready", "descriptive analysis generated"
         artifact = ResultAnalysisArtifact(
             research_run_id, status, execution.verified_record_ids,
