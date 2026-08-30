@@ -26,6 +26,22 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
     if not analysis_path: missing.append("analysis_artifact_reference")
     elif execution.research_run_id not in analysis_path.replace("\\", "/").split("/"): missing.append("analysis_artifact_scope")
     elif artifact_store is not None and not _valid_artifact(artifact_store, analysis_path, execution.research_run_id, "result_analysis"): missing.append("analysis_artifact_invalid")
+    if execution_records := tuple(record for record in experiment_records if record.is_verified):
+        for record in execution_records:
+            if not record.metric_artifact_refs:
+                missing.append("metric_artifact_refs_missing")
+            if set(record.metric_artifact_refs) != set(record.metric_values):
+                missing.append("metric_artifact_refs_incomplete")
+            for metric, reference in record.metric_artifact_refs.items():
+                if not isinstance(reference, str) or "#" not in reference:
+                    missing.append("metric_artifact_ref_format")
+                    continue
+                base, pointer = reference.split("#", 1)
+                if not base or not pointer.startswith("/") or pointer == "/" or "//" in pointer:
+                    missing.append("metric_artifact_ref_format")
+                    continue
+                if artifact_store is None or not _valid_artifact(artifact_store, base, execution.research_run_id, "metric"):
+                    missing.append(f"metric_artifact_invalid:{metric}")
     if citation_registry is None:
         missing.append("citation_registry_missing")
         registry_values = set()
@@ -50,4 +66,5 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
 
 def _valid_artifact(store, path, run_id, artifact_type):
     item = store.resolve(path)
-    return item is not None and item.research_run_id == run_id and item.artifact_type == artifact_type and bool(item.content)
+    allowed = {"metric", "result", "experiment_result"} if artifact_type == "metric" else {artifact_type}
+    return item is not None and item.research_run_id == run_id and item.artifact_type in allowed and bool(item.content)
