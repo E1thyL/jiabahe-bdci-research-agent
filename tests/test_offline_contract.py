@@ -64,7 +64,7 @@ def test_g3_accepts_complete_artifact_store():
     store = ArtifactStore()
     store.register(path="artifacts/r/exp.json", research_run_id="r", artifact_type="experiment_execution", content={"ok": 1})
     store.register(path="artifacts/r/analysis.json", research_run_id="r", artifact_type="result_analysis", content={"ok": 1})
-    claim = ClaimMap((ClaimLink("c1", "limitation", "limit", ("e1",), ("cite-1",), ScientificSupportLevel.FULL_TEXT),))
+    claim = ClaimMap((ClaimLink("c1", "limitation", "limit", ("e1",), ("cite-1",), ScientificSupportLevel.FULL_TEXT),), "artifacts/r/claim_map.json")
     result = check_drafting_readiness(value_gate=SimpleNamespace(decision="go"),
         execution=SimpleNamespace(verified_record_ids=("x",), status="verified", research_run_id="r", artifact_path="artifacts/r/exp.json"),
         analysis=SimpleNamespace(status="ready", artifact_path="artifacts/r/analysis.json"), claim_map=claim,

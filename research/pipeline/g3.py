@@ -10,6 +10,9 @@ class DraftingReadiness:
 def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evidence, usage_records=(), experiment_records=(), citation_registry=None, required_claim_ids=(), required_claim_types=(), artifact_store=None):
     missing=[]
     if artifact_store is None: missing.append("artifact_store_missing")
+    claim_path = getattr(claim_map, "artifact_path", "")
+    if not claim_path: missing.append("claim_map_artifact_reference")
+    elif artifact_store is not None and not _valid_artifact(artifact_store, claim_path, execution.research_run_id, "claim_map"): missing.append("claim_map_artifact_invalid")
     decision = getattr(value_gate, "decision", None)
     if decision is None or getattr(decision, "value", decision) == "no_go": missing.append("value_gate")
     if not execution.verified_record_ids: missing.append("verified_experiment")

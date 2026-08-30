@@ -22,6 +22,7 @@ class ClaimLink:
 @dataclass(frozen=True)
 class ClaimMap:
     claims: tuple[ClaimLink, ...] = ()
+    artifact_path: str = ""
     def validate(self, evidence: Any, *, citations: set[str] | None = None, experiment_records=()) -> tuple[str, ...]:
         ids = set(evidence.ids if hasattr(evidence, "ids") and not callable(evidence.ids) else evidence.ids())
         lookup = {item.evidence_id: item for item in getattr(evidence, "items", ())}
@@ -48,10 +49,10 @@ class ClaimMap:
             if not c.citations: errors.append(f"claim missing citation: {c.claim_id}")
         return tuple(errors)
     def to_dict(self):
-        return {"claims":[{**asdict(c), "minimum_support_level": c.minimum_support_level.value} for c in self.claims]}
+        return {"claims":[{**asdict(c), "minimum_support_level": c.minimum_support_level.value} for c in self.claims], "artifact_path": self.artifact_path}
     def to_json(self): return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, indent=2)
     @classmethod
     def from_dict(cls, data):
-        return cls(tuple(ClaimLink(**{**x, "evidence_ids":tuple(x.get("evidence_ids",())), "citations":tuple(x.get("citations",()))}) for x in data.get("claims",())))
+        return cls(tuple(ClaimLink(**{**x, "evidence_ids":tuple(x.get("evidence_ids",())), "citations":tuple(x.get("citations",()))}) for x in data.get("claims",())), data.get("artifact_path", ""))
     @classmethod
     def from_json(cls, value): return cls.from_dict(json.loads(value))
