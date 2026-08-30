@@ -37,11 +37,21 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
                     missing.append("metric_artifact_ref_format")
                     continue
                 base, pointer = reference.split("#", 1)
-                if not base or not pointer.startswith("/") or pointer == "/" or "//" in pointer:
+                if not _path_in_run(base, execution.research_run_id) or not _resolve_pointer_format(pointer):
                     missing.append("metric_artifact_ref_format")
                     continue
-                if artifact_store is None or not _valid_artifact(artifact_store, base, execution.research_run_id, "metric"):
+                item = None if artifact_store is None else artifact_store.resolve(base)
+                if item is None or not _valid_artifact(artifact_store, base, execution.research_run_id, "metric"):
                     missing.append(f"metric_artifact_invalid:{metric}")
+                    continue
+                try:
+                    actual = _resolve_pointer(item.content, pointer)
+                except (KeyError, IndexError, TypeError, ValueError):
+                    missing.append(f"metric_artifact_pointer_missing:{metric}")
+                    continue
+                expected = record.metric_values.get(metric)
+                if not _nonempty(actual) or type(actual) is not type(expected) or actual != expected:
+                    missing.append(f"metric_artifact_value_mismatch:{metric}")
     if citation_registry is None:
         missing.append("citation_registry_missing")
         registry_values = set()
@@ -66,5 +76,31 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
 
 def _valid_artifact(store, path, run_id, artifact_type):
     item = store.resolve(path)
-    allowed = {"metric", "result", "experiment_result"} if artifact_type == "metric" else {artifact_type}
-    return item is not None and item.research_run_id == run_id and item.artifact_type in allowed and bool(item.content)
+    allowed = {"metric", "result", "experiment_result", "experiment_execution"} if artifact_type == "metric" else {artifact_type}
+    return item is not None and _path_in_run(path, run_id) and item.research_run_id == run_id and item.artifact_type in allowed and bool(item.content)
+
+def _path_in_run(path, run_id):
+    from pathlib import PurePosixPath
+    p = PurePosixPath(path.replace("\\", "/"))
+    return not p.is_absolute() and ".." not in p.parts and run_id in p.parts
+
+def _resolve_pointer_format(pointer):
+    return isinstance(pointer, str) and pointer.startswith("/") and pointer != "/" and all(part == "" or "~" not in part.replace("~0", "").replace("~1", "") for part in pointer.split("/"))
+
+def _resolve_pointer(content, pointer):
+    value = content
+    for token in pointer.split("/")[1:]:
+        if "~" in token and any(x not in {"~0", "~1"} for x in _tilde_parts(token)):
+            raise ValueError("invalid JSON pointer escape")
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(value, dict): value = value[token]
+        elif isinstance(value, list): value = value[int(token)]
+        else: raise TypeError("pointer target is not traversable")
+    return value
+
+def _tilde_parts(token):
+    import re
+    return re.findall(r"~.", token)
+
+def _nonempty(value):
+    return value is not None and value != "" and value != {} and value != []

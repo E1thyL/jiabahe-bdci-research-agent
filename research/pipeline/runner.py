@@ -68,8 +68,11 @@ class ResearchPipelineRunner:
         artifacts["experiment_execution"] = self._artifact(research_run_id, execution.to_dict())
         artifacts["result_analysis"] = self._artifact(research_run_id, analysis.to_dict())
         if artifact_store is not None:
+            execution_content = execution.to_dict()
+            for record in experiment_records:
+                execution_content.update(record.metric_values)
             artifact_store.register(path=execution.artifact_path, research_run_id=research_run_id,
-                                    artifact_type="experiment_execution", content=execution.to_dict())
+                                    artifact_type="experiment_execution", content=execution_content)
             artifact_store.register(path=analysis.artifact_path, research_run_id=research_run_id,
                                     artifact_type="result_analysis", content=analysis.to_dict())
             if claim_map is not None:
