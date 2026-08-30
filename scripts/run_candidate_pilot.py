@@ -191,7 +191,8 @@ def main(argv: list[str] | None = None, *, environ: dict[str, str] | None = None
             return 0
         runtime = ResearchRuntimeConfig.from_env(environ)
         usage_sink = _UsageCollector()
-        artifact_path = f"artifacts/{args.run_id}/candidate_pilot.json"
+        artifact_dir = ROOT / ".pilot-cache" / args.run_id
+        artifact_path = (artifact_dir / "candidate_pilot.json").relative_to(ROOT).as_posix()
         client = _make_client(client_factory, config, usage_sink=usage_sink,
                               run_id=args.run_id, artifact_path=artifact_path)
         online = OpenAlexLiteratureSource(
@@ -201,7 +202,7 @@ def main(argv: list[str] | None = None, *, environ: dict[str, str] | None = None
         offline = ReplayLiteratureSource({})
         report = run_pilot(run_id=args.run_id, max_candidates=len(topics), client=client,
                            router=LiteratureRouter(runtime, offline=offline, online=online),
-                           artifact_dir=ROOT / ".pilot-cache" / args.run_id, secret=config["DEEPSEEK_API_KEY"],
+                           artifact_dir=artifact_dir, secret=config["DEEPSEEK_API_KEY"],
                            usage_sink=usage_sink)
         print(json.dumps({"status": "completed", "research_run_id": report["research_run_id"], "candidate_count": report["candidate_count"]}))
         return 0

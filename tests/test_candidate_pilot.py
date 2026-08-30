@@ -126,6 +126,56 @@ def test_pilot_wires_ideation_and_literature_usage_to_one_sink(tmp_path, monkeyp
     assert not literature.artifact_path.endswith("literature.json")
 
 
+def test_main_ideation_usage_points_to_written_candidate_artifact(tmp_path, monkeypatch):
+    import scripts.run_candidate_pilot as pilot
+
+    monkeypatch.setattr(pilot, "ROOT", tmp_path)
+    environ = {
+        **ENV,
+        "LITERATURE_MODE": "offline",
+        "LITERATURE_ONLINE_SOURCES": "openalex",
+    }
+
+    assert pilot.main(
+        ["--max-candidates", "1", "--run-id", "run-artifact-path"],
+        environ=environ,
+        client_factory=UsageClient,
+    ) == 0
+
+    report_path = tmp_path / ".pilot-cache" / "run-artifact-path" / "candidate_pilot.json"
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    ideation = next(item for item in report["usage"] if item["phase"] == "ideation")
+    assert ideation["artifact_path"] == ".pilot-cache/run-artifact-path/candidate_pilot.json"
+    assert not Path(ideation["artifact_path"]).is_absolute()
+    assert "run-artifact-path" in Path(ideation["artifact_path"]).parts
+    assert (tmp_path / ideation["artifact_path"]).exists()
+    assert "artifacts/run-artifact-path/candidate_pilot.json" not in json.dumps(report)
+
+
+def test_main_artifact_paths_are_run_scoped_across_runs(tmp_path, monkeypatch):
+    import scripts.run_candidate_pilot as pilot
+
+    monkeypatch.setattr(pilot, "ROOT", tmp_path)
+    environ = {
+        **ENV,
+        "LITERATURE_MODE": "offline",
+        "LITERATURE_ONLINE_SOURCES": "openalex",
+    }
+
+    for run_id in ("run-artifact-a", "run-artifact-b"):
+        assert pilot.main(
+            ["--max-candidates", "1", "--run-id", run_id],
+            environ=environ,
+            client_factory=UsageClient,
+        ) == 0
+        report_path = tmp_path / ".pilot-cache" / run_id / "candidate_pilot.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        ideation = next(item for item in report["usage"] if item["phase"] == "ideation")
+        assert ideation["artifact_path"] == f".pilot-cache/{run_id}/candidate_pilot.json"
+        assert (tmp_path / ideation["artifact_path"]).exists()
+
+
 def test_candidate_schema_contains_required_fields():
     candidate = parse_candidate("memory_engine", response())
     assert isinstance(candidate, CandidateProblem)
