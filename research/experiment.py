@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 import json
+import hashlib
 import math
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,23 @@ class ExperimentExecutionStatus(StrEnum):
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
+
+class ExperimentExecutor:
+    """Deterministic offline fixture executor; never calls a model or network."""
+    def run(self, *, experiment_id: str, research_run_id: str, method: str,
+            baseline: str, dataset_provenance: str, seed: int, config: dict[str, Any] | None = None,
+            fixture: Any = None) -> "ExperimentEvidenceRecord":
+        payload = json.dumps([experiment_id, method, baseline, dataset_provenance, seed, config or {}, fixture], sort_keys=True, default=str)
+        digest = hashlib.sha256(payload.encode()).hexdigest()
+        value = int(digest[:8], 16) / 0xFFFFFFFF
+        path = f"artifacts/{research_run_id}/{experiment_id}.json"
+        return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
+            method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
+            dataset_source_uri="offline://fixture", dataset_source_hash=hashlib.sha256(str(fixture).encode()).hexdigest(),
+            config_snapshot=config or {}, seed=seed, metric_values={"fixture_score": value},
+            dispersion={"fixture_score": 0.0}, run_count=1, analysis_method="deterministic_fixture_mean",
+            execution_status=ExperimentExecutionStatus.COMPLETED, verification_status="pending",
+            artifact_path=path, metric_artifact_refs={"fixture_score": f"{path}#/fixture_score"})
 
 
 @dataclass(frozen=True)

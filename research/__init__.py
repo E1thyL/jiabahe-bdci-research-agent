@@ -3,6 +3,7 @@
 from .experiment import (
     ExperimentEvidenceRecord,
     ExperimentExecutionStatus,
+    ExperimentExecutor,
 )
 from .usage import (
     MeasurementStatus,
@@ -18,6 +19,7 @@ from .claim_map import ClaimLink, ClaimMap
 __all__ = [
     "ExperimentEvidenceRecord",
     "ExperimentExecutionStatus",
+    "ExperimentExecutor",
     "MeasurementStatus",
     "ResearchPhase",
     "ResearchUsageRecord",
