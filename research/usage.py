@@ -166,7 +166,9 @@ def emit_usage(
         sink.record(record)
 
 
-def _totals(records: Iterable[ResearchUsageRecord]) -> dict[str, int]:
+def _totals(records: Iterable[ResearchUsageRecord]) -> dict[str, Any]:
+    records = tuple(records)
+    known_request_counts = [record.request_count for record in records if record.request_count is not None]
     result = {
         "total_input_tokens": 0,
         "total_output_tokens": 0,
@@ -174,6 +176,7 @@ def _totals(records: Iterable[ResearchUsageRecord]) -> dict[str, int]:
         "total_retries": 0,
         "total_wall_time_ms": 0,
         "total_reviewer_calls": 0,
+        "total_request_count": sum(known_request_counts) if known_request_counts else None,
     }
     for record in records:
         result["total_input_tokens"] += record.input_tokens or 0

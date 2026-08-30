@@ -90,7 +90,6 @@ def run_pilot(*, run_id: str, max_candidates: int, client: Any, router: Literatu
             {"query": candidate.problem_statement},
             usage_sink=usage_sink,
             research_run_id=run_id,
-            artifact_path=f"artifacts/{run_id}/literature.json",
         )
         bundle = search.to_evidence_bundle()
         evidence_ids = tuple(sorted(bundle.ids()))
@@ -195,7 +194,10 @@ def main(argv: list[str] | None = None, *, environ: dict[str, str] | None = None
         artifact_path = f"artifacts/{args.run_id}/candidate_pilot.json"
         client = _make_client(client_factory, config, usage_sink=usage_sink,
                               run_id=args.run_id, artifact_path=artifact_path)
-        online = OpenAlexLiteratureSource(cache_dir=ROOT / ".pilot-cache", research_run_id=args.run_id, max_pages=1, max_retries=1)
+        online = OpenAlexLiteratureSource(
+            cache_dir=ROOT / ".pilot-cache", research_run_id=args.run_id, max_pages=1, max_retries=1,
+            artifact_path_resolver=lambda path: path.relative_to(ROOT).as_posix(),
+        )
         offline = ReplayLiteratureSource({})
         report = run_pilot(run_id=args.run_id, max_candidates=len(topics), client=client,
                            router=LiteratureRouter(runtime, offline=offline, online=online),

@@ -41,6 +41,7 @@ class OpenAlexLiteratureSource:
         max_retries: int = 2,
         request_fn: Transport | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
+        artifact_path_resolver: Callable[[Path], str] | None = None,
     ) -> None:
         if not research_run_id.strip():
             raise ValueError("research_run_id must not be empty")
@@ -53,6 +54,7 @@ class OpenAlexLiteratureSource:
         self.max_retries = max_retries
         self._request = request_fn or _request_openalex
         self._sleep = sleep_fn
+        self._artifact_path_resolver = artifact_path_resolver
         self._usage_request_count = 0
         self._usage_retry_count = 0
         self._usage_started = 0.0
@@ -77,10 +79,12 @@ class OpenAlexLiteratureSource:
         self._usage_retry_count = 0
         config = topic_config or {}
         query = str(config.get("query") or candidate.problem_statement).strip()
+        cache_path = self._cache_path(query or "empty-query")
         if not query:
-            return self._result(candidate, query, LiteratureSearchStatus.EMPTY)
+            snapshot = {"query": query, "source_name": self.source_name, "status": "empty", "results": []}
+            self._write_snapshot(cache_path, snapshot)
+            return self._result(candidate, query, LiteratureSearchStatus.EMPTY, artifact_path=self._artifact_reference(cache_path), raw_response=snapshot)
         per_page = min(max(int(config.get("per_page", 25)), 1), 100)
-        cache_path = self._cache_path(query)
         if cache_path.exists():
             try:
                 payload = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -89,7 +93,7 @@ class OpenAlexLiteratureSource:
                 return self._result(
                     candidate, query, LiteratureSearchStatus.FAILED,
                     failure_reason=f"invalid cached OpenAlex response: {exc}",
-                    artifact_path=str(cache_path),
+                    artifact_path=self._artifact_reference(cache_path),
                 )
 
         all_records: list[dict[str, Any]] = []
@@ -97,21 +101,24 @@ class OpenAlexLiteratureSource:
             params = urlencode({"search": query, "per-page": per_page, "page": page})
             status, body, failure = self._request_with_retries(f"{self.API_URL}?{params}")
             if failure is not None:
+                self._write_failure(cache_path, query, failure)
                 return self._result(
                     candidate, query, LiteratureSearchStatus.FAILED,
-                    failure_reason=failure,
+                    failure_reason=failure, artifact_path=self._artifact_reference(cache_path),
                 )
             try:
                 payload = json.loads(body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                self._write_failure(cache_path, query, f"invalid OpenAlex JSON: {exc}")
                 return self._result(
                     candidate, query, LiteratureSearchStatus.FAILED,
-                    failure_reason=f"invalid OpenAlex JSON: {exc}",
+                    failure_reason=f"invalid OpenAlex JSON: {exc}", artifact_path=self._artifact_reference(cache_path),
                 )
             if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+                self._write_failure(cache_path, query, "OpenAlex response lacks a results list")
                 return self._result(
                     candidate, query, LiteratureSearchStatus.FAILED,
-                    failure_reason="OpenAlex response lacks a results list",
+                    failure_reason="OpenAlex response lacks a results list", artifact_path=self._artifact_reference(cache_path),
                 )
             all_records.extend(payload["results"])
             if len(payload["results"]) < per_page:
@@ -122,12 +129,29 @@ class OpenAlexLiteratureSource:
             "source_name": "openalex",
             "results": all_records,
         }
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2),
-            encoding="utf-8",
-        )
+        self._write_snapshot(cache_path, snapshot)
         return self._result_from_payload(candidate, query, snapshot, cache_path)
+
+    def _artifact_reference(self, path: Path) -> str:
+        if self._artifact_path_resolver is not None:
+            return self._artifact_path_resolver(path)
+        if path.is_absolute():
+            try:
+                return path.relative_to(Path.cwd()).as_posix()
+            except ValueError:
+                return path.as_posix()
+        return path.as_posix()
+
+    @staticmethod
+    def _write_snapshot(path: Path, payload: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
+
+    def _write_failure(self, path: Path, query: str, reason: str) -> None:
+        self._write_snapshot(path, {
+            "query": query, "source_name": self.source_name, "status": "failed",
+            "failure_reason": reason, "results": [],
+        })
 
     def _request_with_retries(self, url: str) -> tuple[int, bytes, str | None]:
         for attempt in range(self.max_retries + 1):
@@ -171,7 +195,7 @@ class OpenAlexLiteratureSource:
         else:
             status = LiteratureSearchStatus.PARTIAL if skipped else LiteratureSearchStatus.SUCCESS
         return self._result(
-            candidate, query, status, records=tuple(records), artifact_path=str(cache_path),
+            candidate, query, status, records=tuple(records), artifact_path=self._artifact_reference(cache_path),
             raw_response=payload,
         )
 
