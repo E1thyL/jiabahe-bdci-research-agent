@@ -23,24 +23,44 @@ class ExperimentExecutor:
     """Deterministic offline fixture executor; never calls a model or network."""
     def run(self, *, experiment_id: str, research_run_id: str, method: str,
             baseline: str, dataset_provenance: str, seed: int, config: dict[str, Any] | None = None,
-            fixture: Any = None) -> "ExperimentEvidenceRecord":
+            fixture: Any = None, metric_name: str = "", evaluator: Any = None,
+            min_samples: int = 2) -> "ExperimentEvidenceRecord":
         try:
             fixture_value = fixture() if callable(fixture) else fixture
         except Exception:
             return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
                 method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
                 execution_status=ExperimentExecutionStatus.FAILED, verification_status="pending")
-        payload = json.dumps([experiment_id, method, baseline, dataset_provenance, seed, config or {}, fixture_value], sort_keys=True, default=str)
-        digest = hashlib.sha256(payload.encode()).hexdigest()
-        value = int(digest[:8], 16) / 0xFFFFFFFF
         path = f"artifacts/{research_run_id}/{experiment_id}.json"
+        provenance_hash = hashlib.sha256(str(fixture_value).encode()).hexdigest()
+        if evaluator is None or not metric_name.strip():
+            return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
+                method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
+                dataset_source_uri="offline://fixture", dataset_source_hash=provenance_hash,
+                config_snapshot=config or {}, seed=seed, execution_status=ExperimentExecutionStatus.PENDING,
+                verification_status="pending", artifact_path=path, execution_mode="simulated")
+        try:
+            values = tuple(fixture_value)
+            if len(values) < min_samples:
+                return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
+                    method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
+                    dataset_source_uri="offline://fixture", dataset_source_hash=provenance_hash,
+                    config_snapshot=config or {}, seed=seed, execution_status=ExperimentExecutionStatus.PENDING,
+                    verification_status="insufficient", artifact_path=path, execution_mode="offline_fixture")
+            value = float(evaluator(values))
+        except Exception:
+            return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
+                method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
+                dataset_source_uri="offline://fixture", dataset_source_hash=provenance_hash,
+                config_snapshot=config or {}, seed=seed, execution_status=ExperimentExecutionStatus.FAILED,
+                verification_status="pending", artifact_path=path, execution_mode="offline_fixture")
         return ExperimentEvidenceRecord(record_id=experiment_id, research_run_id=research_run_id,
             method_id=method, baseline_id=baseline, dataset_id=dataset_provenance,
-            dataset_source_uri="offline://fixture", dataset_source_hash=hashlib.sha256(str(fixture_value).encode()).hexdigest(),
-            config_snapshot=config or {}, seed=seed, metric_values={"fixture_score": value},
-            dispersion={"fixture_score": 0.0}, run_count=1, analysis_method="deterministic_fixture_mean",
+            dataset_source_uri="offline://fixture", dataset_source_hash=provenance_hash,
+            config_snapshot=config or {}, seed=seed, metric_values={metric_name: value},
+            dispersion={metric_name: 0.0}, run_count=len(values), analysis_method="explicit_offline_evaluator",
             execution_status=ExperimentExecutionStatus.COMPLETED, verification_status="pending",
-            artifact_path=path, metric_artifact_refs={"fixture_score": f"{path}#/fixture_score"})
+            artifact_path=path, metric_artifact_refs={metric_name: f"{path}#/{metric_name}"}, execution_mode="offline_fixture")
 
 
 @dataclass(frozen=True)
