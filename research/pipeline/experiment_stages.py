@@ -85,19 +85,23 @@ class ResultAnalysisStage:
         research_run_id: str,
         execution: ExperimentExecutionArtifact,
         *,
+        records: Iterable[ExperimentEvidenceRecord] = (),
         usage_sink: UsageSink | None = None,
     ) -> ResultAnalysisArtifact:
         if not research_run_id.strip():
             raise ValueError("research_run_id must not be empty")
         if execution.research_run_id != research_run_id:
             raise ValueError("execution artifact must match research_run_id")
-        if not execution.verified_record_ids:
+        records = tuple(records)
+        if not records:
+            status, reason, analyses = "pending", "analysis input not supplied", {}
+        elif not execution.verified_record_ids:
             status, reason, analyses = "inconclusive", "no verified experiment results", {}
         else:
             # Conservative descriptive analysis.  No significance claim is made.
             analyses = {}
-            for record_id in execution.verified_record_ids:
-                analyses[record_id] = {"status": "supported", "metrics": {}}
+            for record in records:
+                analyses[record.record_id] = {"status": "supported", "metrics": record.metric_values}
             status, reason = "ready", "descriptive analysis generated"
         artifact = ResultAnalysisArtifact(
             research_run_id, status, execution.verified_record_ids,
