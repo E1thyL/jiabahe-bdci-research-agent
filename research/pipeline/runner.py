@@ -62,11 +62,12 @@ class ResearchPipelineRunner:
         analysis = ResultAnalysisStage().run(research_run_id, execution, records=experiment_records, usage_sink=self.usage)
         artifacts["experiment_execution"] = self._artifact(research_run_id, execution.to_dict())
         artifacts["result_analysis"] = self._artifact(research_run_id, analysis.to_dict())
+        supplied_claim_map = claim_map is not None
         if claim_map is None:
             claim_map = ClaimMap()
         readiness = check_drafting_readiness(value_gate=decision, execution=execution,
             analysis=analysis, claim_map=claim_map, evidence=evidence, usage_records=())
-        if experiment_records or claim_map is not None:
+        if experiment_records or supplied_claim_map:
             artifacts["drafting_g3"] = self._artifact(research_run_id, {"status": readiness.status, "missing": list(readiness.missing)})
         return PipelineResult(research_run_id, artifacts, evidence, decision,
             "ready" if readiness.ready else "drafting_blocked")
