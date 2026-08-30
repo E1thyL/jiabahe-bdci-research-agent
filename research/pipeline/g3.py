@@ -7,7 +7,7 @@ class DraftingReadiness:
     @property
     def ready(self): return self.status == "ready"
 
-def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evidence, usage_records=(), experiment_records=()):
+def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evidence, usage_records=(), experiment_records=(), citation_registry=None, required_claim_ids=(), required_claim_types=()):
     missing=[]
     decision = getattr(value_gate, "decision", None)
     if decision is None or getattr(decision, "value", decision) == "no_go": missing.append("value_gate")
@@ -20,8 +20,14 @@ def check_drafting_readiness(*, value_gate, execution, analysis, claim_map, evid
     analysis_path = getattr(analysis, "artifact_path", "")
     if not analysis_path: missing.append("analysis_artifact_reference")
     elif execution.research_run_id not in analysis_path.replace("\\", "/").split("/"): missing.append("analysis_artifact_scope")
-    errors=claim_map.validate(evidence, experiment_records=experiment_records)
+    if citation_registry is None:
+        missing.append("citation_registry_missing")
+    errors=claim_map.validate(evidence, experiment_records=experiment_records, citations=set(citation_registry or ()))
     if errors: missing.append("claim_map")
+    claim_ids = {claim.claim_id for claim in claim_map.claims}
+    claim_types = {claim.claim_type for claim in claim_map.claims}
+    if set(required_claim_ids) - claim_ids: missing.append("required_claims")
+    if set(required_claim_types) - claim_types: missing.append("required_claim_types")
     if not usage_records: missing.append("usage")
     elif any(getattr(record, "research_run_id", None) != execution.research_run_id for record in usage_records):
         missing.append("usage_run_id")

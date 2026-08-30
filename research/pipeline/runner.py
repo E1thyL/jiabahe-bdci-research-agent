@@ -40,7 +40,10 @@ class ResearchPipelineRunner:
     def run(self, candidate: CandidateProblem, *, research_run_id: str,
             topic_config: dict[str, Any] | None = None,
             experiment_records: tuple[ExperimentEvidenceRecord, ...] = (),
-            claim_map: ClaimMap | None = None) -> PipelineResult:
+            claim_map: ClaimMap | None = None,
+            citation_registry: set[str] | None = None,
+            required_claim_ids: tuple[str, ...] = (),
+            required_claim_types: tuple[str, ...] = ()) -> PipelineResult:
         artifacts: dict[str, dict[str, Any]] = {}
         self._stage(artifacts, "ideation", research_run_id, candidate.problem_statement)
         # The runner owns one record per pipeline stage. Direct router callers
@@ -69,7 +72,8 @@ class ResearchPipelineRunner:
                               if getattr(record, "research_run_id", None) == research_run_id)
         readiness = check_drafting_readiness(value_gate=decision, execution=execution,
             analysis=analysis, claim_map=claim_map, evidence=evidence, usage_records=usage_records,
-            experiment_records=experiment_records)
+            experiment_records=experiment_records, citation_registry=citation_registry,
+            required_claim_ids=required_claim_ids, required_claim_types=required_claim_types)
         if experiment_records or supplied_claim_map:
             artifacts["drafting_g3"] = self._artifact(research_run_id, {"status": readiness.status, "missing": list(readiness.missing)})
         return PipelineResult(research_run_id, artifacts, evidence, decision,
