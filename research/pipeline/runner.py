@@ -65,8 +65,10 @@ class ResearchPipelineRunner:
         supplied_claim_map = claim_map is not None
         if claim_map is None:
             claim_map = ClaimMap()
+        usage_records = tuple(record for record in getattr(self.usage, "records", ())
+                              if getattr(record, "research_run_id", None) == research_run_id)
         readiness = check_drafting_readiness(value_gate=decision, execution=execution,
-            analysis=analysis, claim_map=claim_map, evidence=evidence, usage_records=())
+            analysis=analysis, claim_map=claim_map, evidence=evidence, usage_records=usage_records)
         if experiment_records or supplied_claim_map:
             artifacts["drafting_g3"] = self._artifact(research_run_id, {"status": readiness.status, "missing": list(readiness.missing)})
         return PipelineResult(research_run_id, artifacts, evidence, decision,
