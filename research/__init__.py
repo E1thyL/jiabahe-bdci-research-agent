@@ -13,6 +13,7 @@ from .usage import (
     emit_usage,
     make_phase_usage_record,
 )
+from .claim_map import ClaimLink, ClaimMap
 
 __all__ = [
     "ExperimentEvidenceRecord",
@@ -24,4 +25,5 @@ __all__ = [
     "aggregate_usage",
     "emit_usage",
     "make_phase_usage_record",
+    "ClaimLink", "ClaimMap",
 ]

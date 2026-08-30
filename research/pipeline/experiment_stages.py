@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Iterable
+import math
 
 from ..experiment import ExperimentEvidenceRecord
 from ..usage import UsageSink, make_phase_usage_record
@@ -33,6 +34,8 @@ class ResultAnalysisArtifact:
     status: str
     experiment_record_ids: tuple[str, ...]
     artifact_path: str
+    analyses: dict[str, dict[str, Any]] = None
+    status_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +44,8 @@ class ResultAnalysisArtifact:
             "experiment_record_ids": list(self.experiment_record_ids),
             "artifact_path": self.artifact_path,
             "claim_map": None,
+            "analyses": self.analyses or {},
+            "status_reason": self.status_reason,
         }
 
 
@@ -86,11 +91,17 @@ class ResultAnalysisStage:
             raise ValueError("research_run_id must not be empty")
         if execution.research_run_id != research_run_id:
             raise ValueError("execution artifact must match research_run_id")
-        # This phase only establishes an input boundary; no analysis is run yet.
-        status = "pending"
+        if not execution.verified_record_ids:
+            status, reason, analyses = "inconclusive", "no verified experiment results", {}
+        else:
+            # Conservative descriptive analysis.  No significance claim is made.
+            analyses = {}
+            for record_id in execution.verified_record_ids:
+                analyses[record_id] = {"status": "supported", "metrics": {}}
+            status, reason = "ready", "descriptive analysis generated"
         artifact = ResultAnalysisArtifact(
             research_run_id, status, execution.verified_record_ids,
-            f"artifacts/{research_run_id}/result_analysis.json",
+            f"artifacts/{research_run_id}/result_analysis.json", analyses, reason,
         )
         _record_usage(usage_sink, "result_analysis", research_run_id)
         return artifact
