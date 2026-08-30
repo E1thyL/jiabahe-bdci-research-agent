@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from ..value_gate.schema import CandidateProblem, EvidenceBundle, EvidenceItem, EvidenceStatus
+from ..value_gate.schema import (
+    CandidateProblem,
+    EvidenceBundle,
+    EvidenceItem,
+    EvidenceStatus,
+    ScientificSupportLevel,
+)
 
 
 class LiteratureSearchStatus(StrEnum):
@@ -28,9 +34,11 @@ class LiteratureRecord:
     excerpt: str
     evidence_type: str
     verification_status: EvidenceStatus = EvidenceStatus.VERIFIED
+    support_level: ScientificSupportLevel = ScientificSupportLevel.METADATA
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "verification_status", EvidenceStatus(self.verification_status))
+        object.__setattr__(self, "support_level", ScientificSupportLevel(self.support_level))
 
 
 @dataclass(frozen=True)
@@ -63,6 +71,7 @@ class LiteratureSearchResult:
                 evidence_type=record.evidence_type,
                 verification_status=record.verification_status,
                 source_hash=_stable_hash(record),
+                support_level=record.support_level,
             )
             for record in self.records
         )

@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from ..value_gate.schema import CandidateProblem, EvidenceStatus
+from ..value_gate.schema import CandidateProblem, EvidenceStatus, ScientificSupportLevel
 from .protocol import (
     LiteratureRecord,
     LiteratureSearchResult,
@@ -204,6 +204,7 @@ def _normalize_record(raw: Any) -> LiteratureRecord | None:
         excerpt=excerpt,
         evidence_type="prior_work",
         verification_status=EvidenceStatus.VERIFIED,
+        support_level=ScientificSupportLevel.ABSTRACT,
     )
 
 

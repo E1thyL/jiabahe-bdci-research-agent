@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 import json
+from functools import total_ordering
 from typing import Any
 
 
@@ -18,6 +19,37 @@ class GateDecision(StrEnum):
     GO = "go"
     REVISE = "revise"
     NO_GO = "no_go"
+
+
+@total_ordering
+class ScientificSupportLevel(StrEnum):
+    """Strength of the scientific support carried by an evidence item.
+
+    This is deliberately separate from :class:`EvidenceStatus`: a verified
+    provenance record can still provide only metadata-level support.
+    """
+
+    METADATA = "metadata"
+    ABSTRACT = "abstract"
+    FULL_TEXT = "full_text"
+    EXPERIMENT = "experiment"
+
+    @property
+    def rank(self) -> int:
+        return ("metadata", "abstract", "full_text", "experiment").index(
+            self.value
+        )
+
+    def __lt__(self, other: object) -> bool:
+        if isinstance(other, str):
+            other = type(self)(other)
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        return self.rank < other.rank
+
+    def supports(self, required: "ScientificSupportLevel | str") -> bool:
+        """Return whether this level is at least as strong as *required*."""
+        return self >= type(self)(required)
 
 
 @dataclass(frozen=True)
@@ -54,11 +86,19 @@ class EvidenceItem:
     evidence_type: str
     verification_status: EvidenceStatus = EvidenceStatus.VERIFIED
     source_hash: str = ""
+    support_level: ScientificSupportLevel = ScientificSupportLevel.METADATA
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "verification_status", EvidenceStatus(self.verification_status)
         )
+        try:
+            support_level = ScientificSupportLevel(self.support_level)
+        except ValueError as exc:
+            raise ValueError(
+                f"unsupported scientific support level: {self.support_level}"
+            ) from exc
+        object.__setattr__(self, "support_level", support_level)
         if not self.evidence_id.strip():
             raise ValueError("evidence_id must not be empty")
         if not self.source_uri.strip() or not self.title.strip():
@@ -73,6 +113,11 @@ class EvidenceItem:
             "metric",
         }:
             raise ValueError(f"unsupported evidence_type: {self.evidence_type}")
+        if support_level == ScientificSupportLevel.EXPERIMENT:
+            raise ValueError(
+                "EvidenceItem cannot use experiment support level; "
+                "use ExperimentEvidenceRecord"
+            )
 
     @property
     def kind(self) -> str:

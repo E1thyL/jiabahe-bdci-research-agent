@@ -31,6 +31,11 @@ Existing and reused verbatim from the code:
   `EvidenceIndex.verified_experiment_ids()` returns empty and `experiment.status`
   stays `pending` under the current schema.
 - `MeasurementStatus`: `observed`, `estimated`, `pending`.
+- `ScientificSupportLevel`: `metadata`, `abstract`, `full_text`, `experiment` is
+  implemented on `EvidenceItem` as a conservative evidence annotation. Legacy
+  `EvidenceItem` construction defaults to `metadata`; `LiteratureRecord` propagates
+  an explicit level to the materialized item. Claim-level validation and experiment
+  records remain proposed.
 - `ValueGateDecision`, whose evidence state is exposed only as `literature.status`
   and `experiment.status` (each an `EvidenceStatus`); `ResearchUsageRecord`,
   `aggregate_usage`, and the `topic` policies (`required_baselines`,
@@ -38,7 +43,7 @@ Existing and reused verbatim from the code:
 
 Proposed by this contract and not yet implemented (collected in section 12):
 
-- A `ScientificSupportLevel` for evidence and claims.
+- Claim-level `ScientificSupportLevel` validation and claim/evidence compatibility.
 - An `ExperimentEvidenceRecord` to carry experiment provenance.
 - Two additional phases, `experiment_execution` and `result_analysis`.
 - A unified `evidence_status` for stage outputs.
@@ -61,8 +66,9 @@ not mean the paper's conclusions, algorithmic details, or technical differences 
 been checked against full text or reproduced. Provenance verification and scientific
 support are different axes.
 
-Every evidence item and every claim declares a support level (proposed
-`ScientificSupportLevel`):
+Every `EvidenceItem` now declares a `ScientificSupportLevel`. Claim-level support
+annotations and validation are proposed and will be added with `claim_map`. The
+current levels are:
 
 - `metadata` (title, authors, venue, year): supports existence and categorization
   only. It cannot support a technical-difference or empirical claim.
@@ -70,11 +76,13 @@ Every evidence item and every claim declares a support level (proposed
   explicitly insufficient for a complete technical-difference claim (the
   NoveltyGapBuilder rule).
 - `full_text`: can support a technical-difference claim about prior work.
-- `experiment`: can support an empirical claim, and only from a reproducible
-  experiment record produced by this project.
+- `experiment`: reserved for a reproducible experiment record produced by this
+  project; the current `EvidenceItem` schema rejects this level and uses the
+  proposed `ExperimentEvidenceRecord` instead.
 
-A claim may not exceed the support level of the evidence behind it. A `verified`
-metadata item does not license a full-text technical-difference claim.
+When claim validation is implemented, a claim may not exceed the support level of
+the evidence behind it. A `verified` metadata item does not license a full-text
+technical-difference claim.
 
 ## 2. Stage gates: scientific go to drafting
 
@@ -325,8 +333,9 @@ follows the official written answer; until then, the default path is offline.
 These are proposed by this contract and are not implemented. They are the work items a
 later implementation step must land; naming and shape are indicative.
 
-- `ScientificSupportLevel`: `metadata`, `abstract`, `full_text`, `experiment`.
-  Attached to evidence and to claims (section 1).
+- Claim-level `ScientificSupportLevel` validation and claim/evidence compatibility.
+  Evidence-level support annotations are implemented; claim-level enforcement is
+  still proposed (section 1).
 - `ExperimentEvidenceRecord`: the current `EvidenceItem.evidence_type` has no
   `experiment` value and `kind` never resolves to `experiment`, so
   `verified_experiment_ids()` is always empty and `experiment.status` is always

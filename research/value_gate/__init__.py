@@ -10,6 +10,7 @@ from .schema import (
     EvidenceItem,
     EvidenceStatus,
     GateDecision,
+    ScientificSupportLevel,
     ValueGateDecision,
 )
 
@@ -19,6 +20,7 @@ __all__ = [
     "EvidenceBundle",
     "EvidenceItem",
     "EvidenceStatus",
+    "ScientificSupportLevel",
     "EvidenceCollector",
     "FixtureEvidenceCollector",
     "AdapterEvidenceCollector",
